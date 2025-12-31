@@ -38,9 +38,20 @@ Preferred communication style: Simple, everyday language.
 - **Routes**: API route definitions with type-safe request/response schemas
 
 ### AI Integration
-- **Coaching Feature**: OpenAI integration for achievement coaching responses
-- **Rate Limiting**: 10 coaching requests per user limit
+- **Coaching Feature**: OpenAI GPT-4o-mini integration for achievement coaching responses
+- **Rate Limiting**: 5 coaching requests per user limit
 - **Additional Integrations**: Replit AI integrations for chat (Anthropic) and image generation (OpenAI)
+
+### Gamification System
+- **XP Points**: Users earn 10 XP per achievement logged
+- **Levels**: Users level up every 50 XP (Level = floor(XP / 50) + 1)
+- **Badges**: Automatic badge awards for milestones (first_achievement, five_achievements)
+- **Progress Bar**: Visual XP progress indicator in the header
+
+### Security Features
+- **Achievement Encryption**: AES-256-GCM encryption for achievement titles (optional, enabled with ENCRYPTION_KEY)
+- **Session Security**: PostgreSQL-backed sessions with 30-day expiry
+- **Password Security**: scrypt hashing with timing-safe comparison
 
 ## External Dependencies
 

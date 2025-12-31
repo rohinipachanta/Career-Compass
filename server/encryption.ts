@@ -3,25 +3,34 @@ import { promisify } from "util";
 
 const scryptAsync = promisify(scrypt);
 
-// ENCRYPTION_KEY must be set in environment - this is a dedicated key for data encryption
+// ENCRYPTION_KEY is required in production, optional in development
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 const ALGORITHM = "aes-256-gcm";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-function validateEncryptionKey(): void {
-  if (!ENCRYPTION_KEY) {
-    throw new Error("ENCRYPTION_KEY environment variable is required for data encryption. Please set a strong, unique encryption key.");
-  }
-  if (ENCRYPTION_KEY.length < 32) {
-    throw new Error("ENCRYPTION_KEY must be at least 32 characters long for security.");
+function isEncryptionEnabled(): boolean {
+  return !!ENCRYPTION_KEY && ENCRYPTION_KEY.length >= 32;
+}
+
+function validateEncryption(): void {
+  if (IS_PRODUCTION && !isEncryptionEnabled()) {
+    console.error("WARNING: ENCRYPTION_KEY is not set in production. Achievement data will not be encrypted.");
   }
 }
 
 async function getDerivedKey(): Promise<Buffer> {
-  validateEncryptionKey();
-  return (await scryptAsync(ENCRYPTION_KEY!, "achievement-salt", 32)) as Buffer;
+  if (!ENCRYPTION_KEY) {
+    throw new Error("ENCRYPTION_KEY not set");
+  }
+  return (await scryptAsync(ENCRYPTION_KEY, "achievement-salt", 32)) as Buffer;
 }
 
 export async function encryptText(text: string): Promise<string> {
+  // If encryption is not enabled, return text as-is
+  if (!isEncryptionEnabled()) {
+    return text;
+  }
+  
   const key = await getDerivedKey();
   const iv = randomBytes(16);
   const cipher = createCipheriv(ALGORITHM, key, iv);
@@ -36,14 +45,21 @@ export async function encryptText(text: string): Promise<string> {
 }
 
 export async function decryptText(encryptedData: string): Promise<string> {
+  // Check if data appears to be encrypted (has the expected format)
+  const parts = encryptedData.split(":");
+  if (parts.length !== 3 || parts[0].length !== 32 || parts[1].length !== 32) {
+    // Data is not encrypted, return as-is
+    return encryptedData;
+  }
+  
+  // If encryption is not enabled but data is encrypted, we can't decrypt
+  if (!isEncryptionEnabled()) {
+    console.warn("Data appears encrypted but ENCRYPTION_KEY is not set");
+    return encryptedData;
+  }
+  
   try {
     const key = await getDerivedKey();
-    const parts = encryptedData.split(":");
-    
-    if (parts.length !== 3) {
-      // Data is not encrypted, return as-is (for backward compatibility)
-      return encryptedData;
-    }
     
     const iv = Buffer.from(parts[0], "hex");
     const authTag = Buffer.from(parts[1], "hex");
@@ -57,7 +73,8 @@ export async function decryptText(encryptedData: string): Promise<string> {
     
     return decrypted;
   } catch (error) {
-    // If decryption fails, return original (for backward compatibility with unencrypted data)
+    // If decryption fails, return original (for backward compatibility)
+    console.error("Decryption failed:", error);
     return encryptedData;
   }
 }
