@@ -26,6 +26,14 @@ async function comparePassword(supplied: string, stored: string) {
   return timingSafeEqual(hashedBuf, suppliedBuf);
 }
 
+import Anthropic from "@anthropic-ai/sdk";
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const COACHING_LIMIT = 10;
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -138,6 +146,47 @@ export async function registerRoutes(
       } else {
         res.status(500).json({ message: "Internal Server Error" });
       }
+    }
+  });
+
+  app.post(api.achievements.getCoaching.path, async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    const achievementId = parseInt(req.params.id);
+
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) return res.sendStatus(401);
+      if (user.coachingCount >= COACHING_LIMIT) {
+        return res.status(403).json({ message: "Coaching limit reached. Each user gets 10 requests for testing." });
+      }
+
+      const achievement = await storage.getAchievement(achievementId);
+      if (!achievement) return res.status(404).json({ message: "Achievement not found" });
+      if (achievement.userId !== userId) return res.sendStatus(401);
+
+      const msg = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `Please analyze this career achievement: "${achievement.title}".
+          Provide coaching on:
+          1. How to reframe it for maximum impact.
+          2. Specific talking points for performance reviews.
+          3. How to quantify the impact if possible.
+          Keep it professional and encouraging.`
+        }],
+      });
+
+      const coachingResponse = msg.content[0].type === 'text' ? msg.content[0].text : "No text response from AI.";
+      await storage.updateAchievement(achievementId, coachingResponse);
+      await storage.incrementCoachingCount(userId);
+
+      res.json({ coachingResponse });
+    } catch (err) {
+      console.error("Coaching error:", err);
+      res.status(500).json({ message: "Failed to get coaching advice" });
     }
   });
 

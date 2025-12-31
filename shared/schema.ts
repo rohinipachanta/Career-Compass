@@ -6,12 +6,14 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  coachingCount: integer("coaching_count").default(0).notNull(),
 });
 
 export const achievements = pgTable("achievements", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
   title: text("title").notNull(),
+  coachingResponse: text("coaching_response"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

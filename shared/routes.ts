@@ -5,6 +5,7 @@ export const errorSchemas = {
   validation: z.object({ message: z.string() }),
   unauthorized: z.object({ message: z.string() }),
   conflict: z.object({ message: z.string() }),
+  limitReached: z.object({ message: z.string() }),
 };
 
 export const api = {
@@ -59,6 +60,17 @@ export const api = {
       responses: {
         201: z.custom<typeof achievements.$inferSelect>(),
         400: errorSchemas.validation,
+      },
+    },
+    getCoaching: {
+      method: 'POST' as const,
+      path: '/api/achievements/:id/coaching',
+      responses: {
+        200: z.object({ coachingResponse: z.string() }),
+        400: errorSchemas.validation,
+        401: errorSchemas.unauthorized,
+        403: errorSchemas.limitReached,
+        404: z.object({ message: z.string() }),
       },
     },
   },
