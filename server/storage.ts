@@ -1,6 +1,6 @@
 import { users, achievements, type User, type InsertUser, type Achievement, type InsertAchievement } from "@shared/schema";
 import { db } from "./db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -30,7 +30,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAchievements(userId: number): Promise<Achievement[]> {
-    return db.select().from(achievements).where(eq(achievements.userId, userId));
+    return db
+      .select()
+      .from(achievements)
+      .where(eq(achievements.userId, userId))
+      .orderBy(desc(achievements.achievementDate), desc(achievements.id));
   }
 
   async createAchievement(userId: number, insertAchievement: InsertAchievement): Promise<Achievement> {
