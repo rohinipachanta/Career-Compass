@@ -26,10 +26,10 @@ async function comparePassword(supplied: string, stored: string) {
   return timingSafeEqual(hashedBuf, suppliedBuf);
 }
 
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 const COACHING_LIMIT = 10;
@@ -165,9 +165,8 @@ export async function registerRoutes(
       if (!achievement) return res.status(404).json({ message: "Achievement not found" });
       if (achievement.userId !== userId) return res.sendStatus(401);
 
-      const msg = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1024,
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
         messages: [{
           role: "user",
           content: `Please analyze this career achievement: "${achievement.title}".
@@ -179,7 +178,7 @@ export async function registerRoutes(
         }],
       });
 
-      const coachingResponse = msg.content[0].type === 'text' ? msg.content[0].text : "No text response from AI.";
+      const coachingResponse = response.choices[0].message.content || "No response from AI.";
       await storage.updateAchievement(achievementId, coachingResponse);
       await storage.incrementCoachingCount(userId);
 
