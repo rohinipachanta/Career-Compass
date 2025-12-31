@@ -132,7 +132,7 @@ function ResetPasswordDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="link" size="sm" className="text-muted-foreground hover:text-primary">
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary h-auto p-0 font-normal underline-offset-4 hover:underline">
           Forgot password?
         </Button>
       </DialogTrigger>
