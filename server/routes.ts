@@ -1,16 +1,154 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { api } from "@shared/routes";
+import { z } from "zod";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+import MemoryStore from "memorystore";
+
+const scryptAsync = promisify(scrypt);
+const SessionStore = MemoryStore(session);
+
+async function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+async function comparePassword(supplied: string, stored: string) {
+  const [hashed, salt] = stored.split(".");
+  const hashedBuf = Buffer.from(hashed, "hex");
+  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+  return timingSafeEqual(hashedBuf, suppliedBuf);
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  // Setup session
+  app.use(
+    session({
+      store: new SessionStore({ checkPeriod: 86400000 }),
+      secret: process.env.SESSION_SECRET || "your_secret_key",
+      resave: false,
+      saveUninitialized: false,
+      cookie: { secure: app.get("env") === "production" },
+    })
+  );
 
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  passport.use(
+    new LocalStrategy(async (username, password, done) => {
+      try {
+        const user = await storage.getUserByUsername(username);
+        if (!user) {
+          return done(null, false, { message: "Incorrect username." });
+        }
+        const isValid = await comparePassword(password, user.password);
+        if (!isValid) {
+          return done(null, false, { message: "Incorrect password." });
+        }
+        return done(null, user);
+      } catch (err) {
+        return done(err);
+      }
+    })
+  );
+
+  passport.serializeUser((user: any, done) => {
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const user = await storage.getUser(id);
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
+  });
+
+  // Auth Routes
+  app.post(api.auth.register.path, async (req, res, next) => {
+    try {
+      const existingUser = await storage.getUserByUsername(req.body.username);
+      if (existingUser) {
+        return res.status(409).json({ message: "Username already exists" });
+      }
+
+      const input = api.auth.register.input.parse(req.body);
+      const hashedPassword = await hashPassword(input.password);
+      const user = await storage.createUser({ ...input, password: hashedPassword });
+      
+      req.login(user, (err) => {
+        if (err) return next(err);
+        res.status(201).json({ id: user.id, username: user.username });
+      });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      next(err);
+    }
+  });
+
+  app.post(api.auth.login.path, passport.authenticate("local"), (req, res) => {
+    const user = req.user as any;
+    res.status(200).json({ id: user.id, username: user.username });
+  });
+
+  app.post(api.auth.logout.path, (req, res, next) => {
+    req.logout((err) => {
+      if (err) return next(err);
+      res.sendStatus(200);
+    });
+  });
+
+  app.get(api.auth.user.path, (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+    const user = req.user as any;
+    res.json({ id: user.id, username: user.username });
+  });
+
+  // Achievement Routes
+  app.get(api.achievements.list.path, async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const achievements = await storage.getAchievements((req.user as any).id);
+    res.json(achievements);
+  });
+
+  app.post(api.achievements.create.path, async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const input = api.achievements.create.input.parse(req.body);
+      const achievement = await storage.createAchievement((req.user as any).id, input);
+      res.status(201).json(achievement);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ message: err.errors[0].message });
+      } else {
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    }
+  });
+
+  // Seed demo data
+  const existingUser = await storage.getUserByUsername("demo");
+  if (!existingUser) {
+    const hashedPassword = await hashPassword("demo123");
+    const user = await storage.createUser({ username: "demo", password: hashedPassword });
+    await storage.createAchievement(user.id, { title: "Created my first account" });
+    await storage.createAchievement(user.id, { title: "Started the achievement tracker" });
+  }
 
   return httpServer;
 }
