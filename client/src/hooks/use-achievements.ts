@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type InsertAchievement } from "@shared/routes";
+import { api } from "@shared/routes";
+import { type InsertAchievement } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 export function useAchievements() {
@@ -42,10 +43,40 @@ export function useAchievements() {
     },
   });
 
+  const requestCoachingMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/achievements/${id}/coach`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to request coaching");
+      }
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.achievements.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({
+        title: "Success!",
+        description: "Coaching response received.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    },
+  });
+
   return {
     achievements: achievementsQuery.data,
     isLoading: achievementsQuery.isLoading,
     error: achievementsQuery.error,
     createAchievement: createAchievementMutation,
+    requestCoaching: requestCoachingMutation,
   };
 }

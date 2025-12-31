@@ -124,7 +124,7 @@ export async function registerRoutes(
       return res.sendStatus(401);
     }
     const user = req.user as any;
-    res.json({ id: user.id, username: user.username });
+    res.json({ id: user.id, username: user.username, coachingCount: user.coachingCount });
   });
 
   // Achievement Routes
@@ -194,8 +194,9 @@ export async function registerRoutes(
   if (!existingUser) {
     const hashedPassword = await hashPassword("demo123");
     const user = await storage.createUser({ username: "demo", password: hashedPassword });
-    await storage.createAchievement(user.id, { title: "Created my first account" });
-    await storage.createAchievement(user.id, { title: "Started the achievement tracker" });
+    const today = new Date().toISOString().split('T')[0];
+    await storage.createAchievement(user.id, { title: "Created my first account", achievementDate: today });
+    await storage.createAchievement(user.id, { title: "Started the achievement tracker", achievementDate: today });
   }
 
   return httpServer;
