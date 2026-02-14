@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -39,9 +39,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Trust proxy for secure cookies behind Replit's reverse proxy
+  // Trust proxy for secure cookies behind Railway's reverse proxy
   app.set("trust proxy", 1);
-  
+
   // Setup session
   app.use(
     session({
@@ -52,10 +52,10 @@ export async function registerRoutes(
       secret: process.env.SESSION_SECRET || "your_secret_key",
       resave: false,
       saveUninitialized: false,
-      cookie: { 
-        secure: app.get("env") === "production",
+      cookie: {
+        secure: process.env.NODE_ENV === "production",
         httpOnly: true,
-        sameSite: app.get("env") === "production" ? "none" : "lax",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       },
     })

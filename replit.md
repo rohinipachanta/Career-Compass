@@ -23,7 +23,7 @@ Preferred communication style: Simple, everyday language.
 - **Language**: TypeScript with ESM modules
 - **API Pattern**: RESTful endpoints under `/api/*` prefix
 - **Authentication**: Session-based auth using Passport.js with Local Strategy
-- **Session Storage**: MemoryStore (development) with connect-pg-simple available for production
+- **Session Storage**: PostgreSQL-backed sessions using connect-pg-simple
 - **Password Security**: scrypt hashing with timing-safe comparison
 
 ### Data Layer
@@ -40,7 +40,6 @@ Preferred communication style: Simple, everyday language.
 ### AI Integration
 - **Coaching Feature**: OpenAI GPT-4o-mini integration for achievement coaching responses
 - **Rate Limiting**: 5 coaching requests per user limit
-- **Additional Integrations**: Replit AI integrations for chat (Anthropic) and image generation (OpenAI)
 
 ### Gamification System
 - **XP Points**: Users earn 10 XP per achievement logged
@@ -60,17 +59,14 @@ Preferred communication style: Simple, everyday language.
 - **Drizzle ORM**: Database operations and schema management
 
 ### AI Services
-- **OpenAI API**: Used for coaching responses and image generation
-- **Anthropic API**: Available for chat functionality via Replit AI integrations
+- **OpenAI API**: Used for coaching responses
 
 ### Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string
 - `SESSION_SECRET`: Secret key for session encryption
 - `OPENAI_API_KEY`: OpenAI API key for coaching feature
-- `AI_INTEGRATIONS_ANTHROPIC_API_KEY`: Anthropic API key (for chat integration)
-- `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`: Anthropic base URL (for chat integration)
-- `AI_INTEGRATIONS_OPENAI_API_KEY`: OpenAI API key (for image integration)
-- `AI_INTEGRATIONS_OPENAI_BASE_URL`: OpenAI base URL (for image integration)
+- `NODE_ENV`: Environment mode (development/production)
+- `PORT`: Server port (default: 5000)
 
 ### Key npm Packages
 - Frontend: react, @tanstack/react-query, wouter, react-hook-form, framer-motion
