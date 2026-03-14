@@ -26,10 +26,21 @@ export const achievements = pgTable("achievements", {
   coachingResponse: text("coaching_response"),
   xpEarned: integer("xp_earned").default(10).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  // Career Compass fields
+  feedbackType: text("feedback_type").default("win").notNull(), // 'win' | 'constructive' | 'coaching'
+  source: text("source").default("self").notNull(),             // 'gmail' | 'slack' | 'granola' | 'self'
+  fromPerson: text("from_person"),                              // who gave the feedback
+  isConfirmed: integer("is_confirmed").default(1).notNull(),    // 1 = confirmed, 0 = pending digest
 });
 
 export const insertUserSchema = createInsertSchema(users);
-export const insertAchievementSchema = createInsertSchema(achievements).pick({ title: true, achievementDate: true });
+export const insertAchievementSchema = createInsertSchema(achievements).pick({
+  title: true,
+  achievementDate: true,
+  feedbackType: true,
+  source: true,
+  fromPerson: true,
+});
 export const insertBadgeSchema = createInsertSchema(badges);
 
 export type User = typeof users.$inferSelect;

@@ -68,7 +68,7 @@ export default function Dashboard() {
               </TooltipProvider>
             </div>
             <div>
-              <h1 className="text-xl font-display font-bold">Achievement Tracker</h1>
+              <h1 className="text-xl font-display font-bold flex items-center gap-2">🧭 Career Compass</h1>
               <div className="flex items-center gap-2">
                 <p className="text-xs text-muted-foreground font-medium">@{user?.username}</p>
                 <TooltipProvider>
@@ -157,8 +157,8 @@ export default function Dashboard() {
       <main className="max-w-3xl mx-auto px-4">
         <section className="mb-12">
           <div className="text-center mb-8 space-y-2">
-            <h2 className="text-3xl font-display font-bold">What have you achieved recently?</h2>
-            <p className="text-muted-foreground">Document your wins, big or small.</p>
+            <h2 className="text-3xl font-display font-bold">Log a win or feedback</h2>
+            <p className="text-muted-foreground">Capture it now — wins, kudos, or constructive feedback.</p>
           </div>
           
           <Card className="p-4 shadow-lg border-primary/10 bg-white/80 backdrop-blur-sm">
