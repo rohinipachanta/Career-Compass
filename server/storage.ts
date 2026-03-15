@@ -61,9 +61,18 @@ export class DatabaseStorage implements IStorage {
     // Encrypt the achievement title before storing
     const encryptedTitle = await encryptText(insertAchievement.title);
     
+    // Apply explicit defaults for optional fields to avoid NOT NULL violations
     const [achievement] = await db
       .insert(achievements)
-      .values({ ...insertAchievement, title: encryptedTitle, userId, xpEarned })
+      .values({
+        ...insertAchievement,
+        title:        encryptedTitle,
+        userId,
+        xpEarned,
+        feedbackType: insertAchievement.feedbackType ?? "win",
+        source:       insertAchievement.source       ?? "self",
+        isConfirmed:  insertAchievement.isConfirmed  ?? 1,
+      })
       .returning();
 
     // Update user XP and level
