@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useAchievements } from "@/hooks/use-achievements";
@@ -903,12 +904,37 @@ GOALS FOR NEXT PERIOD
 function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
   const [wedEnabled, setWedEnabled] = useState(true);
   const [friEnabled, setFriEnabled] = useState(true);
+  const [emailInput, setEmailInput] = useState<string>(user.email ?? "");
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSaved, setEmailSaved]   = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const connections = [
-    { id: "gmail",   icon: "📧", name: "Gmail",   desc: "Auto-capture wins from email threads",        connected: false },
-    { id: "slack",   icon: "💬", name: "Slack",   desc: "Surface kudos and shoutouts from channels",   connected: false },
-    { id: "granola", icon: "📝", name: "Granola", desc: "Import wins from meeting notes",              connected: false },
-  ];
+  // The inbound forwarding address — shown after email is saved
+  const inboundAddress = import.meta.env.VITE_INBOUND_EMAIL ?? "";
+
+  const saveEmail = async () => {
+    if (!emailInput.trim() || !emailInput.includes("@")) {
+      toast({ variant: "destructive", title: "Invalid email", description: "Enter a valid email address." });
+      return;
+    }
+    setSavingEmail(true);
+    try {
+      const res = await fetch("/api/user/email", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.trim() }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      setEmailSaved(true);
+      toast({ title: "Email saved!", description: "Forwarded emails from this address will auto-log wins." });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Could not save email." });
+    } finally {
+      setSavingEmail(false);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -937,38 +963,106 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
         </div>
       </section>
 
-      {/* Connections */}
+      {/* ── Email forwarding ─────────────────────────────────────────── */}
       <section className="mb-6">
         <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
-          Connections
+          Email Forwarding
         </h3>
-        <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(36,20%,88%)" }}>
-          {connections.map((c, i) => (
-            <div
-              key={c.id}
-              className="flex items-center gap-3 p-4"
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
+        >
+          <p className="text-sm font-semibold mb-1" style={{ color: "hsl(25,20%,20%)" }}>
+            Your Gmail address
+          </p>
+          <p className="text-xs mb-3" style={{ color: "hsl(36,10%,52%)" }}>
+            Add your Gmail (or any email) so we can match forwarded emails to your account.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={emailInput}
+              onChange={e => { setEmailInput(e.target.value); setEmailSaved(false); }}
+              placeholder="you@gmail.com"
+              className="flex-1 h-9 px-3 rounded-xl text-sm outline-none"
               style={{
-                background: "hsl(36,40%,98%)",
-                borderBottom: i < connections.length - 1 ? "1px solid hsl(36,20%,90%)" : "none",
+                background: "hsl(36,30%,94%)",
+                border: "1px solid hsl(36,20%,84%)",
+                color: "hsl(25,20%,16%)",
               }}
+            />
+            <Button
+              className="h-9 px-4 rounded-xl text-xs font-semibold shrink-0"
+              style={{ background: "hsl(25,55%,42%)", color: "white" }}
+              onClick={saveEmail}
+              disabled={savingEmail}
             >
-              <span className="text-xl">{c.icon}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,16%)" }}>{c.name}</p>
-                <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>{c.desc}</p>
+              {savingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : emailSaved ? "Saved ✓" : "Save"}
+            </Button>
+          </div>
+
+          {/* Forwarding address — shown once an inbound address is configured */}
+          {inboundAddress ? (
+            <div className="mt-4 p-3 rounded-xl" style={{ background: "hsl(36,25%,92%)" }}>
+              <p className="text-xs font-semibold mb-1" style={{ color: "hsl(25,30%,30%)" }}>
+                Your forwarding address
+              </p>
+              <div className="flex items-center gap-2">
+                <code
+                  className="flex-1 text-xs break-all"
+                  style={{ color: "hsl(25,40%,35%)" }}
+                >
+                  {inboundAddress}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(inboundAddress);
+                    toast({ title: "Copied!", description: "Paste this address when forwarding emails." });
+                  }}
+                  className="shrink-0 text-xs font-bold px-2 py-1 rounded-lg"
+                  style={{ background: "hsl(36,20%,85%)", color: "hsl(25,40%,35%)" }}
+                >
+                  Copy
+                </button>
               </div>
-              <button
-                className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl"
-                style={{ background: "hsl(36,20%,90%)", color: "hsl(25,40%,35%)" }}
+              <p className="text-xs mt-2" style={{ color: "hsl(36,10%,52%)" }}>
+                In Gmail: open any email with a win → More (⋮) → Forward → paste this address.
+                The win will appear in This Week for your review.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4 p-3 rounded-xl" style={{ background: "hsl(36,25%,92%)" }}>
+              <p className="text-xs font-semibold mb-0.5" style={{ color: "hsl(25,30%,30%)" }}>
+                Setup required
+              </p>
+              <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
+                The app owner needs to add <code className="font-mono">VITE_INBOUND_EMAIL</code> to Railway
+                (your Postmark inbound address) before the forwarding address appears here.
+                See the setup guide below.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* How it works steps */}
+        <div className="mt-3 space-y-2">
+          {[
+            { n: "1", text: "Save your Gmail address above" },
+            { n: "2", text: "Copy the forwarding address" },
+            { n: "3", text: "In Gmail, forward any win email to that address" },
+            { n: "4", text: "It appears in This Week for you to confirm" },
+          ].map(s => (
+            <div key={s.n} className="flex items-center gap-3">
+              <span
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                style={{ background: "hsl(25,55%,42%)", color: "white" }}
               >
-                Connect
-              </button>
+                {s.n}
+              </span>
+              <p className="text-xs" style={{ color: "hsl(36,10%,48%)" }}>{s.text}</p>
             </div>
           ))}
         </div>
-        <p className="text-xs mt-2 text-center" style={{ color: "hsl(36,10%,56%)" }}>
-          Integrations coming soon — we'll notify you when they're ready.
-        </p>
       </section>
 
       {/* Digest schedule */}

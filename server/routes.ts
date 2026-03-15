@@ -278,6 +278,100 @@ Keep it professional, specific, and confident. Format clearly with short paragra
     }
   });
 
+  // Update the logged-in user's email address
+  app.patch("/api/user/email", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const { email } = req.body;
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ message: "Email is required" });
+    }
+    await storage.updateUserEmail((req.user as any).id, email);
+    const updated = await storage.getUser((req.user as any).id);
+    res.json(updated);
+  });
+
+  // ── Inbound email webhook (called by Postmark) ─────────────────────────────
+  // Postmark POSTs parsed email JSON to: POST /api/inbound-email/:secret
+  // The :secret token is set via INBOUND_WEBHOOK_SECRET env var so only
+  // Postmark (who has your webhook URL) can trigger it.
+  app.post("/api/inbound-email/:secret", async (req, res) => {
+    const expectedSecret = process.env.INBOUND_WEBHOOK_SECRET;
+    if (!expectedSecret || req.params.secret !== expectedSecret) {
+      return res.sendStatus(403);
+    }
+
+    try {
+      // Postmark inbound payload
+      const fromEmail: string = req.body?.From ?? req.body?.FromFull?.Email ?? "";
+      const subject: string   = req.body?.Subject ?? "";
+      const textBody: string  = req.body?.TextBody ?? req.body?.StrippedTextReply ?? "";
+      const htmlBody: string  = req.body?.HtmlBody ?? "";
+
+      if (!fromEmail) return res.status(400).json({ message: "No sender found" });
+
+      // Match sender to a user by stored email
+      const user = await storage.getUserByEmail(fromEmail);
+      if (!user) {
+        console.log(`Inbound email from unknown sender: ${fromEmail}`);
+        return res.json({ status: "ignored", reason: "sender not found" });
+      }
+
+      // Strip HTML tags from body for cleaner AI input
+      const cleanBody = textBody || htmlBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const emailContent = [subject && `Subject: ${subject}`, cleanBody && `Body: ${cleanBody.slice(0, 2000)}`]
+        .filter(Boolean).join("\n");
+
+      if (!emailContent.trim()) {
+        return res.json({ status: "ignored", reason: "empty content" });
+      }
+
+      // Use Gemini to extract a win or feedback from the email
+      const model  = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = `You are a career tracking assistant. Someone forwarded this email to their Career Compass app to log a win or feedback.
+
+Email content:
+${emailContent}
+
+Extract the key achievement, win, or feedback. Reply with JSON only (no markdown):
+{
+  "title": "concise one-sentence description of the win or feedback (max 120 chars)",
+  "feedbackType": "win" or "constructive",
+  "fromPerson": "name of the person who gave feedback, or null if it's the user's own win"
+}
+
+Rules:
+- feedbackType is "win" if it's a positive accomplishment or praise
+- feedbackType is "constructive" if it's critical or developmental feedback
+- Keep the title specific and action-oriented
+- If the email is not about a work win or feedback, return {"title": null}`;
+
+      const result   = await model.generateContent(prompt);
+      const raw      = result.response.text().trim();
+      const jsonText = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/, "").trim();
+      const parsed   = JSON.parse(jsonText);
+
+      if (!parsed.title) {
+        return res.json({ status: "ignored", reason: "not a work win" });
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      await storage.createAchievement(user.id, {
+        title: parsed.title,
+        achievementDate: today,
+        feedbackType: parsed.feedbackType === "constructive" ? "constructive" : "win",
+        source: "gmail",
+        fromPerson: parsed.fromPerson ?? undefined,
+        isConfirmed: 0,  // lands in digest for review
+      });
+
+      console.log(`Inbound win logged for user ${user.username}: ${parsed.title}`);
+      res.json({ status: "ok", title: parsed.title });
+    } catch (err) {
+      console.error("Inbound email error:", err);
+      res.status(500).json({ message: "Failed to process email" });
+    }
+  });
+
   // Seed demo data
   const existingUser = await storage.getUserByUsername("demo");
   if (!existingUser) {

@@ -15,6 +15,8 @@ export interface IStorage {
   deleteAchievement(id: number): Promise<void>;
   incrementCoachingCount(userId: number): Promise<number>;
   updateUserPassword(id: number, password: string): Promise<void>;
+  updateUserEmail(id: number, email: string): Promise<void>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   getBadges(userId: number): Promise<Badge[]>;
   awardBadge(userId: number, type: string): Promise<void>;
 }
@@ -134,6 +136,18 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserPassword(id: number, password: string): Promise<void> {
     await db.update(users).set({ password }).where(eq(users.id, id));
+  }
+
+  async updateUserEmail(id: number, email: string): Promise<void> {
+    await db.update(users).set({ email: email.toLowerCase().trim() }).where(eq(users.id, id));
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email.toLowerCase().trim()));
+    return user;
   }
 }
 

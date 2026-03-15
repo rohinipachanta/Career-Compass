@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   coachingCount: integer("coaching_count").default(0).notNull(),
   xp: integer("xp").default(0).notNull(),
   level: integer("level").default(1).notNull(),
+  email: text("email"),   // user's real email for matching inbound forwards
 });
 
 export const badges = pgTable("badges", {
@@ -40,7 +41,8 @@ export const insertAchievementSchema = createInsertSchema(achievements).pick({
   feedbackType: true,
   source: true,
   fromPerson: true,
-});
+  isConfirmed: true,
+}).partial({ feedbackType: true, source: true, fromPerson: true, isConfirmed: true });
 export const insertBadgeSchema = createInsertSchema(badges);
 
 export type User = typeof users.$inferSelect;
