@@ -910,9 +910,6 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // The inbound forwarding address — shown after email is saved
-  const inboundAddress = import.meta.env.VITE_INBOUND_EMAIL ?? "";
-
   const saveEmail = async () => {
     if (!emailInput.trim() || !emailInput.includes("@")) {
       toast({ variant: "destructive", title: "Invalid email", description: "Enter a valid email address." });
@@ -928,7 +925,7 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
       if (!res.ok) throw new Error("Failed to save");
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       setEmailSaved(true);
-      toast({ title: "Email saved!", description: "Forwarded emails from this address will auto-log wins." });
+      toast({ title: "Email saved!", description: "Gmail captures will now be matched to your account." });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Could not save email." });
     } finally {
@@ -963,10 +960,10 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
         </div>
       </section>
 
-      {/* ── Email forwarding ─────────────────────────────────────────── */}
+      {/* ── Gmail capture ─────────────────────────────────────────── */}
       <section className="mb-6">
         <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
-          Email Forwarding
+          Gmail Capture
         </h3>
         <div
           className="rounded-2xl p-4"
@@ -976,7 +973,7 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
             Your Gmail address
           </p>
           <p className="text-xs mb-3" style={{ color: "hsl(36,10%,52%)" }}>
-            Add your Gmail (or any email) so we can match forwarded emails to your account.
+            Save your Gmail so wins captured by the script get matched to your account.
           </p>
           <div className="flex gap-2">
             <input
@@ -1001,56 +998,24 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
             </Button>
           </div>
 
-          {/* Forwarding address — shown once an inbound address is configured */}
-          {inboundAddress ? (
-            <div className="mt-4 p-3 rounded-xl" style={{ background: "hsl(36,25%,92%)" }}>
-              <p className="text-xs font-semibold mb-1" style={{ color: "hsl(25,30%,30%)" }}>
-                Your forwarding address
-              </p>
-              <div className="flex items-center gap-2">
-                <code
-                  className="flex-1 text-xs break-all"
-                  style={{ color: "hsl(25,40%,35%)" }}
-                >
-                  {inboundAddress}
-                </code>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(inboundAddress);
-                    toast({ title: "Copied!", description: "Paste this address when forwarding emails." });
-                  }}
-                  className="shrink-0 text-xs font-bold px-2 py-1 rounded-lg"
-                  style={{ background: "hsl(36,20%,85%)", color: "hsl(25,40%,35%)" }}
-                >
-                  Copy
-                </button>
-              </div>
-              <p className="text-xs mt-2" style={{ color: "hsl(36,10%,52%)" }}>
-                In Gmail: open any email with a win → More (⋮) → Forward → paste this address.
-                The win will appear in This Week for your review.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-4 p-3 rounded-xl" style={{ background: "hsl(36,25%,92%)" }}>
-              <p className="text-xs font-semibold mb-0.5" style={{ color: "hsl(25,30%,30%)" }}>
-                Setup required
-              </p>
-              <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
-                The app owner needs to add <code className="font-mono">VITE_INBOUND_EMAIL</code> to Railway
-                (your Postmark inbound address) before the forwarding address appears here.
-                See the setup guide below.
-              </p>
-            </div>
-          )}
+          <div className="mt-4 p-3 rounded-xl" style={{ background: "hsl(36,25%,92%)" }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: "hsl(25,30%,30%)" }}>
+              How to capture a win from Gmail
+            </p>
+            <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
+              Open the email in Gmail → click the label icon → apply the label{" "}
+              <code className="font-mono font-bold">career-compass</code>.
+              The Google Apps Script will pick it up within 15 minutes and it'll appear in This Week.
+            </p>
+          </div>
         </div>
 
-        {/* How it works steps */}
         <div className="mt-3 space-y-2">
           {[
             { n: "1", text: "Save your Gmail address above" },
-            { n: "2", text: "Copy the forwarding address" },
-            { n: "3", text: "In Gmail, forward any win email to that address" },
-            { n: "4", text: "It appears in This Week for you to confirm" },
+            { n: "2", text: "In Gmail, find an email with a win or feedback" },
+            { n: "3", text: 'Label it "career-compass"' },
+            { n: "4", text: "It appears in This Week within 15 minutes" },
           ].map(s => (
             <div key={s.n} className="flex items-center gap-3">
               <span
