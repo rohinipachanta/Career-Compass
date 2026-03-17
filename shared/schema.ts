@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, date, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -9,7 +9,8 @@ export const users = pgTable("users", {
   coachingCount: integer("coaching_count").default(0).notNull(),
   xp: integer("xp").default(0).notNull(),
   level: integer("level").default(1).notNull(),
-  email: text("email"),   // user's real email for matching inbound forwards
+  email: text("email"),                              // user's real email for matching inbound forwards
+  weeklyReminder: boolean("weekly_reminder").default(false).notNull(), // opt-in weekly recap email
 });
 
 export const badges = pgTable("badges", {

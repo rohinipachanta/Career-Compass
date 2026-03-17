@@ -10,6 +10,8 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import pgSession from "connect-pg-simple";
 import { pool } from "./db";
+import { sendTestEmail } from "./email";
+import { sendWeeklyReminders } from "./scheduler";
 
 const scryptAsync = promisify(scrypt);
 const PostgresStore = pgSession(session);
@@ -402,6 +404,46 @@ Rules:
       console.error("Inbound email error:", err?.message ?? err);
       res.status(500).json({ message: "Failed to process email", detail: err?.message ?? String(err) });
     }
+  });
+
+  // ── Weekly reminder toggle ──────────────────────────────────────────────────
+  app.patch("/api/user/weekly-reminder", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ message: "enabled must be a boolean" });
+    }
+    const user = req.user as any;
+    if (enabled && !user.email) {
+      return res.status(400).json({ message: "Please add your email address in Settings before enabling reminders." });
+    }
+    await storage.updateWeeklyReminder(user.id, enabled);
+    res.json({ weeklyReminder: enabled });
+  });
+
+  // ── Send a test reminder email ───────────────────────────────────────────────
+  app.post("/api/user/test-reminder", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user as any;
+    if (!user.email) {
+      return res.status(400).json({ message: "Please add your email address in Settings first." });
+    }
+    try {
+      await sendTestEmail(user.email, user.username);
+      res.json({ message: "Test email sent! Check your inbox." });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to send test email" });
+    }
+  });
+
+  // ── Manual trigger for weekly reminders (protected by secret) ───────────────
+  app.post("/api/admin/send-reminders/:secret", async (req, res) => {
+    const expectedSecret = process.env.INBOUND_WEBHOOK_SECRET;
+    if (!expectedSecret || req.params.secret !== expectedSecret) {
+      return res.sendStatus(403);
+    }
+    sendWeeklyReminders().catch(console.error);
+    res.json({ message: "Weekly reminder job triggered" });
   });
 
   // Seed demo data

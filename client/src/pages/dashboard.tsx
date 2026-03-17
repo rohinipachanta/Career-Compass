@@ -1010,8 +1010,45 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
   const [emailInput, setEmailInput] = useState<string>(user.email ?? "");
   const [savingEmail, setSavingEmail] = useState(false);
   const [emailSaved, setEmailSaved]   = useState(false);
+  const [weeklyReminder, setWeeklyReminder] = useState<boolean>(user.weeklyReminder ?? false);
+  const [reminderSaving, setReminderSaving] = useState(false);
+  const [testSending, setTestSending] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const toggleWeeklyReminder = async (enabled: boolean) => {
+    setReminderSaving(true);
+    try {
+      const res = await fetch("/api/user/weekly-reminder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to update");
+      setWeeklyReminder(enabled);
+      await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: enabled ? "Reminders on!" : "Reminders off", description: enabled ? "You'll get a recap every Monday morning." : "Weekly reminders disabled." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setReminderSaving(false);
+    }
+  };
+
+  const sendTestReminder = async () => {
+    setTestSending(true);
+    try {
+      const res = await fetch("/api/user/test-reminder", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed");
+      toast({ title: "Test email sent!", description: "Check your inbox." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setTestSending(false);
+    }
+  };
 
   const saveEmail = async () => {
     if (!emailInput.trim() || !emailInput.includes("@")) {
@@ -1158,6 +1195,50 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
               <ToggleSwitch value={row.value} onChange={row.toggle} />
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Weekly Reminder */}
+      <section className="mb-6">
+        <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
+          Weekly Reminder
+        </h3>
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,16%)" }}>Monday morning recap</p>
+              <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
+                A quick email every Monday with your weekly win count
+              </p>
+            </div>
+            <ToggleSwitch
+              value={weeklyReminder}
+              onChange={() => !reminderSaving && toggleWeeklyReminder(!weeklyReminder)}
+            />
+          </div>
+          {weeklyReminder && user.email && (
+            <div className="flex items-center justify-between pt-3" style={{ borderTop: "1px solid hsl(36,20%,90%)" }}>
+              <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
+                Sends to: <span className="font-medium">{user.email}</span>
+              </p>
+              <Button
+                className="h-7 px-3 rounded-xl text-xs font-semibold"
+                style={{ background: "hsl(36,25%,90%)", color: "hsl(25,20%,30%)" }}
+                onClick={sendTestReminder}
+                disabled={testSending}
+              >
+                {testSending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Send test"}
+              </Button>
+            </div>
+          )}
+          {!user.email && (
+            <p className="text-xs mt-2 p-2 rounded-xl" style={{ background: "hsl(36,30%,93%)", color: "hsl(25,30%,40%)" }}>
+              ⚠️ Save your email address above to enable reminders.
+            </p>
+          )}
         </div>
       </section>
 

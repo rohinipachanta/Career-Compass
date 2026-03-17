@@ -18,6 +18,8 @@ export interface IStorage {
   updateUserPassword(id: number, password: string): Promise<void>;
   updateUserEmail(id: number, email: string): Promise<void>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  updateWeeklyReminder(id: number, enabled: boolean): Promise<void>;
+  getAllUsersWithReminders(): Promise<User[]>;
   getBadges(userId: number): Promise<Badge[]>;
   awardBadge(userId: number, type: string): Promise<void>;
 }
@@ -165,6 +167,14 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(eq(users.email, email.toLowerCase().trim()));
     return user;
+  }
+
+  async updateWeeklyReminder(id: number, enabled: boolean): Promise<void> {
+    await db.update(users).set({ weeklyReminder: enabled }).where(eq(users.id, id));
+  }
+
+  async getAllUsersWithReminders(): Promise<User[]> {
+    return db.select().from(users).where(eq(users.weeklyReminder, true));
   }
 }
 
