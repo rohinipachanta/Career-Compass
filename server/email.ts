@@ -1,6 +1,12 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy — only instantiated when actually sending (so missing key doesn't crash the server)
+function getResend(): Resend {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is not set");
+  }
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 // The "from" address — once you verify a domain on Resend you can change this
 // to something like "Winsync <reminders@winsync.app>"
@@ -13,9 +19,11 @@ export async function sendWeeklyReminderEmail(
   winCount: number
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
-    console.warn("[email] RESEND_API_KEY not set — skipping email");
+    console.warn("[email] RESEND_API_KEY not set — skipping weekly reminder email");
     return;
   }
+
+  const resend = getResend();
 
   const greeting = winCount === 0
     ? `Hey ${username}, it's been a quiet week — that's okay!`
