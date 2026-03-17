@@ -1,0 +1,28 @@
+<svg viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="192" height="192" fill="#F5EDE0" rx="45"/>
+
+  <!-- Outer circle accent -->
+  <circle cx="96" cy="96" r="85" fill="none" stroke="#7B4A2D" stroke-width="3"/>
+
+  <!-- Checkmark/Trophy shape (center) -->
+  <g transform="translate(96, 96)">
+    <!-- Trophy cup outline -->
+    <path d="M -25 -20 L -20 10 Q -20 20 -10 25 L 10 25 Q 20 20 20 10 L 25 -20" fill="none" stroke="#7B4A2D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Handle -->
+    <path d="M 25 -15 Q 40 -15 40 0" fill="none" stroke="#7B4A2D" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Sync arrows (curved around trophy) -->
+    <!-- Right arrow -->
+    <path d="M 35 -30 Q 45 -30 45 -20" fill="none" stroke="#C8922A" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="45,-20 50,-15 43,-18" fill="#C8922A"/>
+
+    <!-- Left arrow -->
+    <path d="M -35 30 Q -45 30 -45 20" fill="none" stroke="#C8922A" stroke-width="2.5" stroke-linecap="round"/>
+    <polygon points="-45,20 -50,15 -43,18" fill="#C8922A"/>
+  </g>
+
+  <!-- Subtle shine/highlight -->
+  <ellipse cx="70" cy="60" rx="20" ry="25" fill="white" opacity="0.15"/>
+</svg>
