@@ -46,7 +46,7 @@ export async function registerRoutes(
 
   // Version check — registered FIRST so it's always available regardless of session setup
   app.get("/api/version", (_req, res) => {
-    res.json({ version: "2026-03-17-v7", status: "ok" });
+    res.json({ version: "2026-03-17-v8", status: "ok" });
   });
 
   // Setup session — try Postgres first, fall back to memory store
@@ -102,9 +102,12 @@ export async function registerRoutes(
   passport.deserializeUser(async (id: number, done) => {
     try {
       const user = await storage.getUser(id);
-      done(null, user);
-    } catch (err) {
-      done(err);
+      done(null, user ?? null);
+    } catch (err: any) {
+      // Never propagate — a bad session should not break ALL requests.
+      // Log the real DB error and silently clear the session instead.
+      console.error("[deserializeUser] DB error (session cleared):", err?.message ?? err);
+      done(null, null);
     }
   });
 
