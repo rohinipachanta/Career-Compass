@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormMessage, FormLabel } from "@/components/ui/form";
 import {
-  LogOut, Plus, Calendar, Loader2, CheckCircle2, X, ChevronDown, ChevronUp, Sparkles
+  LogOut, Plus, Calendar, Loader2, CheckCircle2, X, ChevronDown, ChevronUp, Sparkles, Pencil, Trash2, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
@@ -31,6 +31,7 @@ export default function Dashboard() {
     createAchievement,
     confirmAchievement,
     dismissAchievement,
+    editAchievement,
     requestCoaching,
   } = useAchievements();
   const [, setLocation] = useLocation();
@@ -100,6 +101,9 @@ export default function Dashboard() {
               onRequestCoaching={(id) => requestCoaching.mutate(id)}
               isCoachingPending={requestCoaching.isPending}
               coachingVariable={requestCoaching.variables as number | undefined}
+              onEdit={(id, title, feedbackType, achievementDate) =>
+                editAchievement.mutate({ id, title, feedbackType, achievementDate })}
+              onDelete={(id) => dismissAchievement.mutate(id)}
             />
           )}
           {activeTab === "review" && (
@@ -411,6 +415,8 @@ function WinsTab({
   onRequestCoaching,
   isCoachingPending,
   coachingVariable,
+  onEdit,
+  onDelete,
 }: {
   confirmedWins: Achievement[];
   isLoading: boolean;
@@ -419,6 +425,8 @@ function WinsTab({
   onRequestCoaching: (id: number) => void;
   isCoachingPending: boolean;
   coachingVariable: number | undefined;
+  onEdit: (id: number, title: string, feedbackType: string, achievementDate: string) => void;
+  onDelete: (id: number) => void;
 }) {
   const [filter, setFilter]     = useState<WinFilter>("all");
   const [showForm, setShowForm] = useState(false);
@@ -533,6 +541,8 @@ function WinsTab({
                 index={i}
                 onRequestCoaching={() => onRequestCoaching(a.id)}
                 isCoachingPending={isCoachingPending && coachingVariable === a.id}
+                onEdit={onEdit}
+                onDelete={onDelete}
               />
             ))}
           </AnimatePresence>
@@ -547,22 +557,38 @@ function WinCard({
   index,
   onRequestCoaching,
   isCoachingPending,
+  onEdit,
+  onDelete,
 }: {
   achievement: Achievement;
   index: number;
   onRequestCoaching: () => void;
   isCoachingPending: boolean;
+  onEdit: (id: number, title: string, feedbackType: string, achievementDate: string) => void;
+  onDelete: (id: number) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]         = useState(false);
+  const [editing, setEditing]   = useState(false);
+  const [editTitle, setEditTitle]         = useState(achievement.title);
+  const [editType, setEditType]           = useState(achievement.feedbackType ?? "win");
+  const [editDate, setEditDate]           = useState(achievement.achievementDate ?? format(new Date(), "yyyy-MM-dd"));
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const typeLabel: Record<string, { bg: string; text: string; label: string }> = {
     win:          { bg: "#dcfce7", text: "#166534", label: "Win"      },
     constructive: { bg: "#fef9c3", text: "#854d0e", label: "Feedback" },
     coaching:     { bg: "#dbeafe", text: "#1e40af", label: "Coaching" },
   };
-  const colours    = typeLabel[achievement.feedbackType ?? "win"] ?? typeLabel.win;
+  const colours     = typeLabel[achievement.feedbackType ?? "win"] ?? typeLabel.win;
   const displayDate = achievement.achievementDate
     ? format(new Date(achievement.achievementDate + "T00:00:00"), "MMM d, yyyy")
     : "";
+
+  const handleSaveEdit = () => {
+    if (!editTitle.trim()) return;
+    onEdit(achievement.id, editTitle.trim(), editType, editDate);
+    setEditing(false);
+  };
 
   return (
     <motion.div
@@ -573,67 +599,144 @@ function WinCard({
       className="win-card rounded-2xl p-4"
       style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
     >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span
-              className="text-xs font-bold px-2 py-0.5 rounded-full"
-              style={{ background: colours.bg, color: colours.text }}
+      {editing ? (
+        /* ── Edit mode ── */
+        <div className="space-y-3">
+          <Textarea
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            className="resize-none rounded-xl text-sm h-20"
+            style={{ background: "hsl(36,30%,95%)", border: "1px solid hsl(36,20%,84%)" }}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={editType}
+              onChange={e => setEditType(e.target.value)}
+              className="text-sm rounded-xl px-3 py-2 border"
+              style={{ background: "hsl(36,30%,95%)", borderColor: "hsl(36,20%,84%)", color: "hsl(25,20%,16%)" }}
             >
-              {colours.label}
-            </span>
-            {achievement.fromPerson && (
-              <span className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
-                from {achievement.fromPerson}
-              </span>
-            )}
+              <option value="win">Win</option>
+              <option value="constructive">Feedback</option>
+            </select>
+            <Input
+              type="date"
+              value={editDate}
+              onChange={e => setEditDate(e.target.value)}
+              className="rounded-xl text-sm"
+              style={{ background: "hsl(36,30%,95%)", border: "1px solid hsl(36,20%,84%)" }}
+            />
           </div>
-          <p className="font-medium text-sm leading-snug" style={{ color: "hsl(25,20%,16%)" }}>
-            {achievement.title}
-          </p>
-          <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "hsl(36,10%,56%)" }}>
-            <Calendar className="w-3 h-3" />
-            {displayDate}
-          </p>
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" className="rounded-xl h-8 text-xs"
+              onClick={() => setEditing(false)}>Cancel</Button>
+            <Button size="sm" className="rounded-xl h-8 text-xs font-semibold"
+              style={{ background: "hsl(25,55%,42%)", color: "white" }}
+              onClick={handleSaveEdit}>
+              <Check className="w-3 h-3 mr-1" />Save
+            </Button>
+          </div>
         </div>
-        {!achievement.coachingResponse && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 h-8 px-3 rounded-xl text-xs font-semibold"
-            style={{ borderColor: "hsl(36,20%,82%)", color: "hsl(36,10%,42%)" }}
-            onClick={onRequestCoaching}
-            disabled={isCoachingPending}
-          >
-            {isCoachingPending
-              ? <Loader2 className="w-3 h-3 animate-spin" />
-              : <><Sparkles className="w-3 h-3 mr-1" />Coach</>}
-          </Button>
-        )}
-      </div>
-
-      {achievement.coachingResponse && (
-        <Collapsible open={open} onOpenChange={setOpen} className="mt-3">
-          <CollapsibleTrigger asChild>
-            <button
-              className="w-full flex items-center justify-between text-xs font-semibold px-3 py-2 rounded-xl"
-              style={{ background: "hsl(36,20%,92%)", color: "hsl(25,40%,35%)" }}
-            >
-              <span className="flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3" /> AI Coach Notes
-              </span>
-              {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div
-              className="mt-2 p-3 rounded-xl text-xs leading-relaxed"
-              style={{ background: "hsl(36,30%,94%)", color: "hsl(25,20%,25%)" }}
-            >
-              {achievement.coachingResponse}
+      ) : (
+        /* ── View mode ── */
+        <>
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span
+                  className="text-xs font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: colours.bg, color: colours.text }}
+                >
+                  {colours.label}
+                </span>
+                {achievement.fromPerson && (
+                  <span className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
+                    from {achievement.fromPerson}
+                  </span>
+                )}
+              </div>
+              <p className="font-medium text-sm leading-snug" style={{ color: "hsl(25,20%,16%)" }}>
+                {achievement.title}
+              </p>
+              <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "hsl(36,10%,56%)" }}>
+                <Calendar className="w-3 h-3" />
+                {displayDate}
+              </p>
             </div>
-          </CollapsibleContent>
-        </Collapsible>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1 shrink-0">
+              {!achievement.coachingResponse && (
+                <Button
+                  size="sm" variant="outline"
+                  className="h-8 px-3 rounded-xl text-xs font-semibold"
+                  style={{ borderColor: "hsl(36,20%,82%)", color: "hsl(36,10%,42%)" }}
+                  onClick={onRequestCoaching}
+                  disabled={isCoachingPending}
+                >
+                  {isCoachingPending
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <><Sparkles className="w-3 h-3 mr-1" />Coach</>}
+                </Button>
+              )}
+              <Button
+                size="sm" variant="ghost"
+                className="h-8 w-8 p-0 rounded-xl"
+                style={{ color: "hsl(36,10%,52%)" }}
+                onClick={() => { setEditTitle(achievement.title); setEditType(achievement.feedbackType ?? "win"); setEditDate(achievement.achievementDate ?? ""); setEditing(true); }}
+                title="Edit"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </Button>
+              {confirmDelete ? (
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" className="h-8 px-2 rounded-xl text-xs"
+                    style={{ color: "#dc2626", background: "#fee2e2" }}
+                    onClick={() => { onDelete(achievement.id); setConfirmDelete(false); }}>
+                    Delete
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-xl text-xs"
+                    onClick={() => setConfirmDelete(false)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm" variant="ghost"
+                  className="h-8 w-8 p-0 rounded-xl"
+                  style={{ color: "hsl(36,10%,62%)" }}
+                  onClick={() => setConfirmDelete(true)}
+                  title="Delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {achievement.coachingResponse && (
+            <Collapsible open={open} onOpenChange={setOpen} className="mt-3">
+              <CollapsibleTrigger asChild>
+                <button
+                  className="w-full flex items-center justify-between text-xs font-semibold px-3 py-2 rounded-xl"
+                  style={{ background: "hsl(36,20%,92%)", color: "hsl(25,40%,35%)" }}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" /> AI Coach Notes
+                  </span>
+                  {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div
+                  className="mt-2 p-3 rounded-xl text-xs leading-relaxed"
+                  style={{ background: "hsl(36,30%,94%)", color: "hsl(25,20%,25%)" }}
+                >
+                  {achievement.coachingResponse}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </>
       )}
     </motion.div>
   );

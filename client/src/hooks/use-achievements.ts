@@ -89,6 +89,25 @@ export function useAchievements() {
     },
   });
 
+  const editAchievementMutation = useMutation({
+    mutationFn: async ({ id, title, feedbackType, achievementDate }: { id: number; title: string; feedbackType: string; achievementDate: string }) => {
+      const res = await fetch(`/api/achievements/${id}/edit`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, feedbackType, achievementDate }),
+      });
+      if (!res.ok) throw new Error("Failed to edit");
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.achievements.list.path] });
+      toast({ title: "Updated!", description: "Win has been saved." });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Could not update this win." });
+    },
+  });
+
   const requestCoachingMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/achievements/${id}/coach`, {
@@ -125,6 +144,7 @@ export function useAchievements() {
     createAchievement: createAchievementMutation,
     confirmAchievement: confirmAchievementMutation,
     dismissAchievement: dismissAchievementMutation,
+    editAchievement: editAchievementMutation,
     requestCoaching: requestCoachingMutation,
   };
 }

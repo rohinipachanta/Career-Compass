@@ -11,6 +11,7 @@ export interface IStorage {
   createAchievement(userId: number, achievement: InsertAchievement): Promise<Achievement>;
   getAchievement(id: number): Promise<Achievement | undefined>;
   updateAchievement(id: number, coachingResponse: string): Promise<void>;
+  editAchievement(id: number, title: string, feedbackType: string, achievementDate: string): Promise<void>;
   confirmAchievement(id: number): Promise<void>;
   deleteAchievement(id: number): Promise<void>;
   incrementCoachingCount(userId: number): Promise<number>;
@@ -126,6 +127,13 @@ export class DatabaseStorage implements IStorage {
 
   async updateAchievement(id: number, coachingResponse: string): Promise<void> {
     await db.update(achievements).set({ coachingResponse }).where(eq(achievements.id, id));
+  }
+
+  async editAchievement(id: number, title: string, feedbackType: string, achievementDate: string): Promise<void> {
+    const encryptedTitle = await encryptText(title);
+    await db.update(achievements)
+      .set({ title: encryptedTitle, feedbackType, achievementDate })
+      .where(eq(achievements.id, id));
   }
 
   async confirmAchievement(id: number): Promise<void> {
