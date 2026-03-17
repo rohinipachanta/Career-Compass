@@ -96,47 +96,65 @@ export async function registerRoutes(
   });
 
   // Auth Routes
-  app.post(api.auth.register.path, async (req, res, next) => {
+  app.post(api.auth.register.path, async (req, res) => {
+    const errMsg = (err: any) =>
+      err?.message || err?.detail || (typeof err === "string" ? err : JSON.stringify(err)) || "Unknown error";
+
     try {
+      console.log("[register] step 1: checking existing user");
       const existingUser = await storage.getUserByUsername(req.body.username);
       if (existingUser) {
         return res.status(409).json({ message: "Username already exists" });
       }
 
+      console.log("[register] step 2: parsing input");
       const input = api.auth.register.input.parse(req.body);
+
+      console.log("[register] step 3: hashing password");
       const hashedPassword = await hashPassword(input.password);
+
+      console.log("[register] step 4: creating user in DB");
       const user = await storage.createUser({ ...input, password: hashedPassword });
 
-      req.login(user, (err) => {
-        if (err) return next(err);
-        // Return full user so the client cache is fully populated
-        res.status(201).json(user);
+      console.log("[register] step 5: creating session");
+      await new Promise<void>((resolve) => {
+        req.login(user, (err) => {
+          if (err) {
+            console.error("[register] session error (non-fatal):", errMsg(err));
+          }
+          resolve(); // continue even if session fails
+        });
       });
+
+      console.log("[register] step 6: sending response");
+      return res.status(201).json(user);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
       }
-      console.error("[register] error:", err?.message ?? err);
-      res.status(500).json({ message: err?.message ?? "Registration failed" });
+      console.error("[register] caught error:", errMsg(err), err);
+      return res.status(500).json({ message: errMsg(err) });
     }
   });
 
   app.post(api.auth.login.path, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
+      const errMsg = (e: any) =>
+        e?.message || e?.detail || (typeof e === "string" ? e : JSON.stringify(e)) || "Unknown error";
+
       if (err) {
-        console.error("[login] passport error:", err?.message ?? err);
-        return res.status(500).json({ message: err?.message ?? "Login error" });
+        console.error("[login] passport error:", errMsg(err));
+        return res.status(500).json({ message: errMsg(err) });
       }
       if (!user) {
         return res.status(401).json({ message: info?.message ?? "Invalid username or password" });
       }
       req.login(user, (loginErr) => {
         if (loginErr) {
-          console.error("[login] req.login error:", loginErr?.message ?? loginErr);
-          return res.status(500).json({ message: loginErr?.message ?? "Login failed" });
+          console.error("[login] session error:", errMsg(loginErr));
+          return res.status(500).json({ message: errMsg(loginErr) });
         }
-        // Return full user so the client cache is fully populated
-        res.status(200).json(user);
+        return res.status(200).json(user);
       });
     })(req, res, next);
   });
