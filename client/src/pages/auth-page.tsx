@@ -25,7 +25,8 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="fixed bottom-2 right-2 text-xs text-muted-foreground opacity-40 select-none">v7</div>
       <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
         <div className="hidden md:flex flex-col justify-center space-y-6">
           <div className="flex items-center gap-3">
