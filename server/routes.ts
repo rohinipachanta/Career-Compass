@@ -95,6 +95,11 @@ export async function registerRoutes(
     }
   });
 
+  // Version check — tells us which build is live
+  app.get("/api/version", (_req, res) => {
+    res.json({ version: "2026-03-17-v5", status: "ok" });
+  });
+
   // Auth Routes
   app.post(api.auth.register.path, async (req, res) => {
     const errMsg = (err: any) =>
