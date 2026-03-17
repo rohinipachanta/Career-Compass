@@ -66,9 +66,14 @@ export function useAuth() {
       }
       return api.auth.register.responses[201].parse(await res.json());
     },
-    onSuccess: (_user, credentials) => {
-      // Auto-login immediately after successful registration
-      loginMutation.mutate(credentials);
+    onSuccess: (user) => {
+      // Server already calls req.login() during registration, session is live.
+      // Just update the cache and show a welcome toast — no second login needed.
+      queryClient.setQueryData([api.auth.user.path], user);
+      toast({
+        title: "Welcome to Winsync! ⚡",
+        description: `Account created for @${user.username}`,
+      });
     },
     onError: (error) => {
       toast({
