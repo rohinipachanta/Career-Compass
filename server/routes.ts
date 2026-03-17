@@ -301,13 +301,19 @@ Keep it professional, specific, and confident. Format clearly with short paragra
     }
 
     try {
-      // Postmark inbound payload
-      const fromEmail: string = req.body?.From ?? req.body?.FromFull?.Email ?? "";
+      // Inbound email payload (from Google Apps Script or Postmark)
+      const rawFrom: string   = req.body?.From ?? req.body?.FromFull?.Email ?? "";
       const subject: string   = req.body?.Subject ?? "";
       const textBody: string  = req.body?.TextBody ?? req.body?.StrippedTextReply ?? "";
       const htmlBody: string  = req.body?.HtmlBody ?? "";
 
-      if (!fromEmail) return res.status(400).json({ message: "No sender found" });
+      if (!rawFrom) return res.status(400).json({ message: "No sender found" });
+
+      // Extract plain email address from "Name <email@example.com>" or "email@example.com"
+      const emailMatch = rawFrom.match(/<([^>]+)>/) || rawFrom.match(/([^\s]+@[^\s]+)/);
+      const fromEmail = emailMatch ? emailMatch[1].toLowerCase().trim() : rawFrom.toLowerCase().trim();
+
+      console.log(`Inbound email received from: ${rawFrom} → parsed: ${fromEmail}`);
 
       // Match sender to a user by stored email
       const user = await storage.getUserByEmail(fromEmail);
