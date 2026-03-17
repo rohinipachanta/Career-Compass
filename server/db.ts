@@ -23,6 +23,11 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS weekly_reminder boolean NOT NULL DEFAULT false;
     `);
     console.log("[db] Migrations applied.");
+  } catch (err: any) {
+    // Log clearly but don't throw — startup continues even if migration fails.
+    // IMPORTANT: if this fails, add the column manually in Supabase SQL Editor:
+    //   ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_reminder boolean NOT NULL DEFAULT false;
+    console.error("[db] Migration error (add column manually if login/register breaks):", err?.message ?? err);
   } finally {
     client.release();
   }
