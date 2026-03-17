@@ -854,11 +854,17 @@ function LogWinForm({ onSubmit, isPending }: { onSubmit: (data: InsertAchievemen
 }
 
 // ─── Tab: Self Review ────────────────────────────────────────────────────────
+type ReviewMode = "idle" | "draft";
+
 function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
-  const [period, setPeriod]   = useState<"3m" | "6m" | "1y">("3m");
-  const [draft, setDraft]     = useState("");
-  const [generating, setGenerating] = useState(false);
-  const { toast }             = useToast();
+  const [period, setPeriod]             = useState<"3m" | "6m" | "1y">("3m");
+  const [mode, setMode]                 = useState<ReviewMode>("idle");
+  const [draft, setDraft]               = useState("");
+  const [draftSource, setDraftSource]   = useState<"ai" | "scratch">("ai");
+  const [generating, setGenerating]     = useState(false);
+  const [polishing, setPolishing]       = useState(false);
+  const [copied, setCopied]             = useState(false);
+  const { toast }                       = useToast();
 
   const periodLabels = { "3m": "Last 3 months", "6m": "Last 6 months", "1y": "Last year" };
   const periodDays   = { "3m": 90, "6m": 180, "1y": 365 };
@@ -871,42 +877,72 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
     return date >= cutoff;
   });
 
+  const winTitles = filteredWins.map(w => w.title);
+
+  // Generate a fresh AI draft from wins
   const generateDraft = async () => {
     if (filteredWins.length === 0) {
       toast({ variant: "destructive", title: "No wins yet", description: "Log some wins first, then generate your review." });
       return;
     }
     setGenerating(true);
-    await new Promise(r => setTimeout(r, 1200));
+    try {
+      const res = await fetch("/api/review/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wins: winTitles, periodLabel: periodLabels[period] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Generation failed");
+      setDraft(data.draft);
+      setDraftSource("ai");
+      setMode("draft");
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setGenerating(false);
+    }
+  };
 
-    const winsList = filteredWins.map((w, i) => `${i + 1}. ${w.title}`).join("\n");
-    const generated = `SELF-REVIEW DRAFT — ${periodLabels[period].toUpperCase()}
-Generated ${format(new Date(), "MMMM d, yyyy")}
+  // Polish whatever is in the textarea with AI
+  const polishWithAI = async () => {
+    if (!draft.trim()) {
+      toast({ variant: "destructive", title: "Nothing to polish", description: "Write something first." });
+      return;
+    }
+    setPolishing(true);
+    try {
+      const res = await fetch("/api/review/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wins: winTitles, periodLabel: periodLabels[period], existingDraft: draft }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Polish failed");
+      setDraft(data.draft);
+      toast({ title: "✨ Polished!", description: "AI improved your draft." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setPolishing(false);
+    }
+  };
 
-KEY ACCOMPLISHMENTS
-──────────────────
-${winsList}
+  const startFromScratch = () => {
+    setDraft("");
+    setDraftSource("scratch");
+    setMode("draft");
+  };
 
-IMPACT & VALUE DELIVERED
-────────────────────────
-Over the ${periodLabels[period].toLowerCase()}, I contributed across ${filteredWins.length} documented wins spanning wins, feedback, and growth moments.
+  const clearDraft = () => {
+    setDraft("");
+    setMode("idle");
+  };
 
-[Tip: personalise each bullet with specific metrics, team names, or business outcomes before submitting.]
-
-AREAS OF GROWTH
-───────────────
-${filteredWins.filter(w => w.feedbackType === "constructive").length > 0
-  ? "I actively sought and acted on constructive feedback to improve in key areas."
-  : "I focused on delivering consistent wins and will seek more feedback next cycle."}
-
-GOALS FOR NEXT PERIOD
-──────────────────────
-• Continue capturing wins regularly via Winsync digests
-• Build deeper impact stories around top 3 accomplishments above
-• [Add your own goal here]
-`;
-    setDraft(generated);
-    setGenerating(false);
+  const copyDraft = () => {
+    navigator.clipboard.writeText(draft);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -935,7 +971,7 @@ GOALS FOR NEXT PERIOD
         ))}
       </div>
 
-      {/* Win count */}
+      {/* Win count summary */}
       <div
         className="rounded-2xl p-4 mb-5 flex items-center gap-3"
         style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
@@ -953,51 +989,117 @@ GOALS FOR NEXT PERIOD
         </div>
       </div>
 
-      {/* Generate button */}
-      <Button
-        className="w-full h-12 rounded-2xl font-semibold text-base mb-5"
-        style={{ background: "hsl(25,55%,42%)", color: "white" }}
-        onClick={generateDraft}
-        disabled={generating}
-      >
-        {generating
-          ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Generating draft…</>
-          : <><Sparkles className="w-4 h-4 mr-2" />Generate Review Draft</>}
-      </Button>
-
-      {/* Draft output */}
-      {draft && (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div
-            className="rounded-2xl p-4"
-            style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
+      {/* ── IDLE: no draft yet ─────────────────────────────────────────────────── */}
+      {mode === "idle" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Button
+            className="w-full h-12 rounded-2xl font-semibold text-base mb-3"
+            style={{ background: "hsl(25,55%,42%)", color: "white" }}
+            onClick={generateDraft}
+            disabled={generating}
           >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display font-semibold text-sm" style={{ color: "hsl(25,20%,20%)" }}>
-                Your Draft
-              </h3>
-              <button
-                onClick={() => navigator.clipboard.writeText(draft)}
-                className="text-xs font-semibold px-3 py-1 rounded-lg"
-                style={{ background: "hsl(36,20%,90%)", color: "hsl(25,40%,35%)" }}
-              >
-                Copy
-              </button>
-            </div>
-            <pre
-              className="text-xs leading-relaxed whitespace-pre-wrap font-sans"
-              style={{ color: "hsl(25,20%,22%)" }}
-            >
-              {draft}
-            </pre>
-          </div>
+            {generating
+              ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Generating draft…</>
+              : <><Sparkles className="w-4 h-4 mr-2" />Generate with AI</>}
+          </Button>
+
+          <button
+            className="w-full h-10 rounded-2xl text-sm font-semibold"
+            style={{ background: "hsl(36,20%,91%)", color: "hsl(25,20%,35%)" }}
+            onClick={startFromScratch}
+          >
+            ✏️ Write from scratch
+          </button>
+
+          <p className="text-center text-xs mt-3" style={{ color: "hsl(36,10%,55%)" }}>
+            AI uses your logged wins · You can edit freely after
+          </p>
         </motion.div>
       )}
 
-      {!draft && (
-        <p className="text-center text-xs mt-2" style={{ color: "hsl(36,10%,55%)" }}>
-          Your draft will be built from your logged wins above.
-        </p>
+      {/* ── DRAFT: editing mode ────────────────────────────────────────────────── */}
+      {mode === "draft" && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(36,20%,88%)" }}>
+
+            {/* Toolbar */}
+            <div
+              className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap"
+              style={{ background: "hsl(36,25%,94%)", borderBottom: "1px solid hsl(36,20%,88%)" }}
+            >
+              <span className="text-xs font-semibold" style={{ color: "hsl(25,20%,30%)" }}>
+                {draftSource === "ai" ? "✦ AI Draft" : "✏️ Your Draft"} · {periodLabels[period]}
+              </span>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={polishWithAI}
+                  disabled={polishing}
+                  className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                  style={{ background: "hsl(25,55%,42%)", color: "white" }}
+                >
+                  {polishing
+                    ? <><Loader2 className="w-3 h-3 animate-spin" /> Polishing…</>
+                    : <><Sparkles className="w-3 h-3" /> Polish with AI</>}
+                </button>
+                {draftSource === "ai" && (
+                  <button
+                    onClick={generateDraft}
+                    disabled={generating}
+                    className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                    style={{ background: "hsl(36,20%,87%)", color: "hsl(25,30%,30%)" }}
+                  >
+                    {generating
+                      ? <><Loader2 className="w-3 h-3 animate-spin" /> Regenerating…</>
+                      : <>↺ Regenerate</>}
+                  </button>
+                )}
+                <button
+                  onClick={copyDraft}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                  style={{ background: "hsl(36,20%,87%)", color: "hsl(25,30%,30%)" }}
+                >
+                  {copied ? "Copied ✓" : "Copy"}
+                </button>
+                <button
+                  onClick={clearDraft}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                  style={{ background: "transparent", color: "hsl(36,10%,55%)" }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Editable textarea */}
+            <textarea
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder={draftSource === "scratch"
+                ? "Start writing your self-review here…\n\nTip: Use 'Polish with AI' when you're ready to improve it."
+                : ""}
+              rows={20}
+              className="w-full p-4 text-sm leading-relaxed resize-none outline-none"
+              style={{
+                background: "hsl(36,40%,98%)",
+                color: "hsl(25,20%,18%)",
+                fontFamily: "inherit",
+                minHeight: "320px",
+              }}
+            />
+
+            {/* Footer hint */}
+            <div
+              className="px-4 py-2 text-xs"
+              style={{
+                background: "hsl(36,25%,94%)",
+                borderTop: "1px solid hsl(36,20%,88%)",
+                color: "hsl(36,10%,55%)",
+              }}
+            >
+              ✏️ Click anywhere to edit · Polish with AI to improve your edits · Copy to take it elsewhere
+            </div>
+          </div>
+        </motion.div>
       )}
     </motion.div>
   );

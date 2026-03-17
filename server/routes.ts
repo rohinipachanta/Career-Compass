@@ -406,6 +406,80 @@ Rules:
     }
   });
 
+  // ── Review draft generation / polishing ─────────────────────────────────────
+  // POST /api/review/draft
+  // Body: { wins: string[], periodLabel: string, existingDraft?: string }
+  // mode: if existingDraft is provided → polish mode; otherwise → generate from wins
+  app.post("/api/review/draft", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const { wins, periodLabel, existingDraft } = req.body as {
+      wins: string[];
+      periodLabel: string;
+      existingDraft?: string;
+    };
+
+    if (!wins || wins.length === 0) {
+      return res.status(400).json({ message: "No wins provided." });
+    }
+
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      let prompt: string;
+
+      if (existingDraft) {
+        // Polish / improve an existing draft
+        prompt = `You are a career coach helping someone improve their performance self-review.
+
+Here is their current draft:
+"""
+${existingDraft}
+"""
+
+Here are their logged wins for context (${periodLabel}):
+${wins.map((w, i) => `${i + 1}. ${w}`).join("\n")}
+
+Please improve the draft by:
+- Making the language more confident and impactful
+- Adding specific, action-oriented phrasing
+- Ensuring it sounds professional and authentic — NOT generic corporate-speak
+- Keeping all the key accomplishments but making them shine
+- Keeping the structure similar but feel free to improve section titles
+- Inserting [Add metric here] placeholders where a number or % would strengthen a point
+
+Return ONLY the improved draft text with no commentary, no markdown fences.`;
+      } else {
+        // Generate from scratch from wins
+        prompt = `You are a career coach helping someone write their performance self-review.
+
+Period: ${periodLabel}
+
+Their logged wins and feedback:
+${wins.map((w, i) => `${i + 1}. ${w}`).join("\n")}
+
+Write a professional self-review draft with these sections:
+- KEY ACCOMPLISHMENTS (bullet-point the wins, make each one impact-focused)
+- IMPACT & VALUE DELIVERED (2-3 sentence summary of overall contribution)
+- AREAS OF GROWTH (briefly mention constructive feedback or growth areas — keep positive)
+- GOALS FOR NEXT PERIOD (3 forward-looking bullets, the last one as a placeholder for the user to fill in)
+
+Rules:
+- Write in first person ("I delivered...", "I led...")
+- Sound confident and specific, not generic
+- Insert [Add metric here] placeholders where numbers would strengthen a point
+- Keep it under 350 words
+- Do NOT include preamble, commentary, or markdown fences — just the review text`;
+      }
+
+      const result = await model.generateContent(prompt);
+      const draft  = result.response.text().trim();
+      res.json({ draft });
+    } catch (err: any) {
+      console.error("Review draft generation error:", err?.message ?? err);
+      res.status(500).json({ message: "Failed to generate draft", detail: err?.message ?? String(err) });
+    }
+  });
+
   // ── Weekly reminder toggle ──────────────────────────────────────────────────
   app.patch("/api/user/weekly-reminder", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
