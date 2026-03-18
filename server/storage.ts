@@ -41,6 +41,7 @@ export interface IStorage {
   createGoal(userId: number, title: string): Promise<Goal>;
   getGoals(userId: number): Promise<Goal[]>;
   archiveGoal(goalId: number): Promise<void>;
+  archiveCurrentGoals(userId: number, seasonId: number): Promise<void>;
   tagAchievementToGoals(achievementId: number, goalIds: number[]): Promise<void>;
   getGoalProgress(userId: number): Promise<Array<{ goal: Goal; winCount: number; lastWinDate: Date | null; needsNudge: boolean }>>;
 }
@@ -306,6 +307,13 @@ export class DatabaseStorage implements IStorage {
 
   async archiveGoal(goalId: number): Promise<void> {
     await db.update(goals).set({ archivedAt: new Date() }).where(eq(goals.id, goalId));
+  }
+
+  async archiveCurrentGoals(userId: number, seasonId: number): Promise<void> {
+    // Move all active (non-archived, no seasonId) goals into the archived season
+    await db.update(goals)
+      .set({ seasonId, archivedAt: new Date() })
+      .where(sql`${goals.userId} = ${userId} AND ${goals.seasonId} IS NULL AND ${goals.archivedAt} IS NULL`);
   }
 
   async tagAchievementToGoals(achievementId: number, goalIds: number[]): Promise<void> {

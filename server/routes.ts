@@ -621,7 +621,7 @@ Rules:
   app.post("/api/seasons", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const { name } = req.body;
+    const { name, archiveGoals } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ message: "Season name is required" });
     }
@@ -634,6 +634,10 @@ Rules:
       await storage.archiveCurrentWins(userId, season.id);
       // Clear the review draft so they start fresh
       await storage.clearReviewDraft(userId);
+      // Handle goals based on user choice
+      if (archiveGoals === true) {
+        await storage.archiveCurrentGoals(userId, season.id);
+      }
       res.status(201).json(season);
     } catch (err: any) {
       console.error("[wrap-up] Error:", err?.message ?? err);

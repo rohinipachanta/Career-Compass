@@ -109,13 +109,13 @@ export default function Dashboard() {
         open={showWrapUp}
         onClose={() => setShowWrapUp(false)}
         isWrapping={isWrapping}
-        onConfirm={async (name) => {
+        onConfirm={async (name, archiveGoals) => {
           setIsWrapping(true);
           try {
             const res = await fetch("/api/seasons", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name }),
+              body: JSON.stringify({ name, archiveGoals }),
             });
             if (!res.ok) throw new Error((await res.json()).message || "Failed");
             setShowWrapUp(false);
@@ -1778,15 +1778,21 @@ function WrapUpModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string, archiveGoals: boolean) => void;
   isWrapping: boolean;
 }) {
   const defaultName = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const [name, setName] = useState(defaultName);
+  const [step, setStep] = useState<"name" | "goals">("name");
+  const [archiveGoals, setArchiveGoals] = useState<boolean | null>(null);
 
-  // Reset name each time modal opens
+  // Reset state each time modal opens
   useEffect(() => {
-    if (open) setName(defaultName);
+    if (open) {
+      setName(defaultName);
+      setStep("name");
+      setArchiveGoals(null);
+    }
   }, [open]);
 
   return (
@@ -1799,63 +1805,124 @@ function WrapUpModal({
           <div className="flex items-center gap-2 mb-1">
             <span className="text-2xl">📦</span>
             <DialogTitle className="text-xl font-display font-bold" style={{ color: "hsl(25,20%,16%)" }}>
-              Wrap up this season
+              {step === "name" ? "Wrap up this season" : "What about your goals?"}
             </DialogTitle>
           </div>
           <p className="text-sm" style={{ color: "hsl(36,10%,50%)" }}>
-            Give this review season a name. All your current wins and your saved review draft will be archived together so you can look back any time. You'll start fresh after.
+            {step === "name"
+              ? "Give this review season a name. All your current wins and saved review draft will be archived together."
+              : "Decide what happens to your current goals when you start fresh."}
           </p>
         </DialogHeader>
 
-        <div className="px-6 pb-2 space-y-3">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-widest block mb-1.5" style={{ color: "hsl(36,10%,52%)" }}>
-              Season name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              maxLength={80}
-              placeholder="e.g. 2025 Annual Review"
-              className="w-full h-10 px-3 rounded-xl text-sm outline-none"
-              style={{
-                background: "hsl(36,30%,94%)",
-                border: "1px solid hsl(36,20%,84%)",
-                color: "hsl(25,20%,16%)",
-              }}
-            />
-          </div>
-
-          <div
-            className="rounded-xl p-3 text-xs"
-            style={{ background: "hsl(36,30%,92%)", color: "hsl(25,20%,35%)" }}
-          >
-            ⚠️ This will move all your current wins to Past Reviews and clear your draft. Nothing is deleted — you can always go to Past Reviews to read them.
-          </div>
-        </div>
-
-        <div className="px-6 pb-6 pt-3 flex gap-3">
-          <Button
-            variant="outline"
-            className="flex-1 h-11 rounded-2xl font-semibold"
-            style={{ borderColor: "hsl(36,20%,82%)", color: "hsl(25,20%,35%)" }}
-            onClick={onClose}
-            disabled={isWrapping}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 h-11 rounded-2xl font-semibold"
-            style={{ background: "hsl(25,55%,42%)", color: "white" }}
-            onClick={() => name.trim() && onConfirm(name.trim())}
-            disabled={isWrapping || !name.trim()}
-          >
-            {isWrapping
-              ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Archiving…</>
-              : <>📦 Archive & start fresh</>}
-          </Button>
-        </div>
+        {step === "name" ? (
+          <>
+            <div className="px-6 pb-2 space-y-3">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest block mb-1.5" style={{ color: "hsl(36,10%,52%)" }}>
+                  Season name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  maxLength={80}
+                  placeholder="e.g. 2025 Annual Review"
+                  className="w-full h-10 px-3 rounded-xl text-sm outline-none"
+                  style={{
+                    background: "hsl(36,30%,94%)",
+                    border: "1px solid hsl(36,20%,84%)",
+                    color: "hsl(25,20%,16%)",
+                  }}
+                />
+              </div>
+              <div
+                className="rounded-xl p-3 text-xs"
+                style={{ background: "hsl(36,30%,92%)", color: "hsl(25,20%,35%)" }}
+              >
+                ⚠️ This will move all your current wins to Past Reviews and clear your draft. Nothing is deleted — you can always go to Past Reviews to read them.
+              </div>
+            </div>
+            <div className="px-6 pb-6 pt-3 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 h-11 rounded-2xl font-semibold"
+                style={{ borderColor: "hsl(36,20%,82%)", color: "hsl(25,20%,35%)" }}
+                onClick={onClose}
+                disabled={isWrapping}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 h-11 rounded-2xl font-semibold"
+                style={{ background: "hsl(25,55%,42%)", color: "white" }}
+                onClick={() => name.trim() && setStep("goals")}
+                disabled={!name.trim()}
+              >
+                Next →
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="px-6 pb-2 space-y-3">
+              {[
+                {
+                  value: false,
+                  emoji: "🔄",
+                  label: "Keep my goals",
+                  desc: "Carry them over into the new season — good if you're continuing the same objectives.",
+                },
+                {
+                  value: true,
+                  emoji: "📁",
+                  label: "Archive my goals",
+                  desc: "Store them with this season and start fresh — good if your goals are changing.",
+                },
+              ].map(opt => (
+                <button
+                  key={String(opt.value)}
+                  onClick={() => setArchiveGoals(opt.value)}
+                  className="w-full rounded-xl p-4 text-left transition-all"
+                  style={{
+                    background: archiveGoals === opt.value ? "hsl(25,55%,42%)" : "hsl(36,30%,94%)",
+                    border: archiveGoals === opt.value ? "2px solid hsl(25,55%,42%)" : "2px solid hsl(36,20%,84%)",
+                    color: archiveGoals === opt.value ? "white" : "hsl(25,20%,16%)",
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">{opt.emoji}</span>
+                    <span className="font-semibold text-sm">{opt.label}</span>
+                  </div>
+                  <p className="text-xs ml-7" style={{ color: archiveGoals === opt.value ? "rgba(255,255,255,0.8)" : "hsl(36,10%,52%)" }}>
+                    {opt.desc}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div className="px-6 pb-6 pt-3 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 h-11 rounded-2xl font-semibold"
+                style={{ borderColor: "hsl(36,20%,82%)", color: "hsl(25,20%,35%)" }}
+                onClick={() => setStep("name")}
+                disabled={isWrapping}
+              >
+                ← Back
+              </Button>
+              <Button
+                className="flex-1 h-11 rounded-2xl font-semibold"
+                style={{ background: "hsl(25,55%,42%)", color: "white" }}
+                onClick={() => archiveGoals !== null && onConfirm(name.trim(), archiveGoals)}
+                disabled={isWrapping || archiveGoals === null}
+              >
+                {isWrapping
+                  ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Archiving…</>
+                  : <>📦 Archive & start fresh</>}
+              </Button>
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
