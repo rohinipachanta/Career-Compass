@@ -668,6 +668,126 @@ Rules:
     }
   });
 
+  // ── Profile (role, career journey, team, company, context) ────────────────
+  app.get("/api/profile", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    try {
+      const profile = await storage.getProfile(userId);
+      res.json(profile || {});
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch profile" });
+    }
+  });
+
+  app.put("/api/profile", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    try {
+      const { role, careerJourney, team, company, profileContext } = req.body;
+      const profileCompletedAt = role || careerJourney || team || company || profileContext ? new Date() : null;
+      await storage.updateProfile(userId, {
+        role,
+        careerJourney,
+        team,
+        company,
+        profileContext,
+        profileCompletedAt: profileCompletedAt || undefined,
+      });
+      res.json({ message: "Profile updated" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  // ── Goals ──────────────────────────────────────────────────────────────────
+  app.post("/api/goals", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    try {
+      const { title } = req.body;
+      if (!title || typeof title !== "string" || title.trim().length === 0) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+      const goal = await storage.createGoal(userId, title.trim());
+      res.json(goal);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create goal" });
+    }
+  });
+
+  app.get("/api/goals", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    try {
+      const goals = await storage.getGoals(userId);
+      res.json(goals);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch goals" });
+    }
+  });
+
+  app.delete("/api/goals/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    const goalId = parseInt(req.params.id);
+    try {
+      // Verify user owns this goal
+      const goals = await storage.getGoals(userId);
+      if (!goals.find(g => g.id === goalId)) {
+        return res.sendStatus(403);
+      }
+      await storage.archiveGoal(goalId);
+      res.json({ message: "Goal archived" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to archive goal" });
+    }
+  });
+
+  // ── Goal progress (with nudge detection) ────────────────────────────────────
+  app.get("/api/goals/progress", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    try {
+      const progress = await storage.getGoalProgress(userId);
+      res.json(progress);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch goal progress" });
+    }
+  });
+
+  // ── Achievement-Goal tagging ────────────────────────────────────────────────
+  app.put("/api/achievements/:id/goals", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    const achievementId = parseInt(req.params.id);
+    try {
+      const { goalIds } = req.body;
+      if (!Array.isArray(goalIds)) {
+        return res.status(400).json({ message: "goalIds must be an array" });
+      }
+
+      // Verify achievement belongs to user and all goals belong to user
+      const achievement = await storage.getAchievement(achievementId);
+      if (!achievement || achievement.userId !== userId) {
+        return res.sendStatus(403);
+      }
+
+      const userGoals = await storage.getGoals(userId);
+      const userGoalIds = new Set(userGoals.map(g => g.id));
+      for (const gid of goalIds) {
+        if (!userGoalIds.has(gid)) {
+          return res.status(403).json({ message: "Goal not owned by user" });
+        }
+      }
+
+      await storage.tagAchievementToGoals(achievementId, goalIds);
+      res.json({ message: "Achievement tagged to goals" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to tag achievement" });
+    }
+  });
+
   // ── Manual trigger for weekly reminders (protected by secret) ───────────────
   app.post("/api/admin/send-reminders/:secret", async (req, res) => {
     const expectedSecret = process.env.INBOUND_WEBHOOK_SECRET;

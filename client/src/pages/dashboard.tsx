@@ -1478,6 +1478,9 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
         </div>
       </section>
 
+      {/* ── Career Profile ─────────────────────────────────────────── */}
+      <ProfileSection user={user} />
+
       {/* ── Gmail capture ─────────────────────────────────────────── */}
       <section className="mb-6">
         <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
@@ -1846,6 +1849,166 @@ function WrapUpModal({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Career Profile Section ───────────────────────────────────────────────────
+function ProfileSection({ user }: { user: any }) {
+  const [role, setRole] = useState<string>(user.role ?? "");
+  const [careerJourney, setCareerJourney] = useState<string>(user.careerJourney ?? "");
+  const [team, setTeam] = useState<string>(user.team ?? "");
+  const [company, setCompany] = useState<string>(user.company ?? "");
+  const [profileContext, setProfileContext] = useState<string>(user.profileContext ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const saveProfile = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: role || undefined, careerJourney: careerJourney || undefined, team: team || undefined, company: company || undefined, profileContext: profileContext || undefined }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast({ title: "Profile updated!", description: "Your career context has been saved." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const journeyOptions = [
+    { value: "Promotion in current role", label: "Aiming for promotion" },
+    { value: "New job", label: "Looking for a new job" },
+    { value: "Learning & growth", label: "Staying in role, leveling up" },
+  ];
+
+  return (
+    <section className="mb-6">
+      <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
+        Career Profile
+      </h3>
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
+      >
+        <p className="text-xs mb-3" style={{ color: "hsl(36,10%,52%)" }}>
+          Complete your profile so the app can personalize your experience. All fields are optional.
+        </p>
+
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(25,20%,16%)" }}>
+              Current Role
+            </label>
+            <input
+              type="text"
+              value={role}
+              onChange={e => { setRole(e.target.value); setSaved(false); }}
+              placeholder="e.g. Senior Software Engineer"
+              className="w-full h-9 px-3 rounded-xl text-sm outline-none"
+              style={{
+                background: "hsl(36,30%,94%)",
+                border: "1px solid hsl(36,20%,84%)",
+                color: "hsl(25,20%,16%)",
+              }}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(25,20%,16%)" }}>
+              Career Journey
+            </label>
+            <select
+              value={careerJourney}
+              onChange={e => { setCareerJourney(e.target.value); setSaved(false); }}
+              className="w-full h-9 px-3 rounded-xl text-sm outline-none"
+              style={{
+                background: "hsl(36,30%,94%)",
+                border: "1px solid hsl(36,20%,84%)",
+                color: "hsl(25,20%,16%)",
+              }}
+            >
+              <option value="">Select your path...</option>
+              {journeyOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(25,20%,16%)" }}>
+                Team
+              </label>
+              <input
+                type="text"
+                value={team}
+                onChange={e => { setTeam(e.target.value); setSaved(false); }}
+                placeholder="e.g. Platform"
+                className="w-full h-9 px-3 rounded-xl text-sm outline-none"
+                style={{
+                  background: "hsl(36,30%,94%)",
+                  border: "1px solid hsl(36,20%,84%)",
+                  color: "hsl(25,20%,16%)",
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(25,20%,16%)" }}>
+                Company
+              </label>
+              <input
+                type="text"
+                value={company}
+                onChange={e => { setCompany(e.target.value); setSaved(false); }}
+                placeholder="e.g. Acme Corp"
+                className="w-full h-9 px-3 rounded-xl text-sm outline-none"
+                style={{
+                  background: "hsl(36,30%,94%)",
+                  border: "1px solid hsl(36,20%,84%)",
+                  color: "hsl(25,20%,16%)",
+                }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "hsl(25,20%,16%)" }}>
+              Other Context
+            </label>
+            <textarea
+              value={profileContext}
+              onChange={e => { setProfileContext(e.target.value); setSaved(false); }}
+              placeholder="e.g. Skills you're developing, certifications, anything else..."
+              rows={2}
+              className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
+              style={{
+                background: "hsl(36,30%,94%)",
+                border: "1px solid hsl(36,20%,84%)",
+                color: "hsl(25,20%,16%)",
+              }}
+            />
+          </div>
+        </div>
+
+        <Button
+          className="w-full h-9 rounded-xl text-sm font-semibold"
+          style={{ background: "hsl(25,55%,42%)", color: "white" }}
+          onClick={saveProfile}
+          disabled={saving}
+        >
+          {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />Saving...</> : saved ? "Saved ✓" : "Save Profile"}
+        </Button>
+      </div>
+    </section>
   );
 }
 

@@ -13,6 +13,13 @@ export const users = pgTable("users", {
   weeklyReminder: boolean("weekly_reminder").default(false).notNull(), // opt-in weekly recap email
   reviewDraft: text("review_draft"),                 // auto-saved self-review draft text
   reviewDraftUpdatedAt: timestamp("review_draft_updated_at"), // when draft was last saved
+  // Profile fields
+  role: text("role"),                                // e.g. "Senior Software Engineer", "Product Manager"
+  careerJourney: text("career_journey"),             // e.g. "Promotion in current role", "New job", "Learning & growth"
+  team: text("team"),                                // e.g. "Platform Engineering"
+  company: text("company"),                          // e.g. "Acme Corp"
+  profileContext: text("profile_context"),           // open text field for any other context
+  profileCompletedAt: timestamp("profile_completed_at"), // null = not completed, set = completed
 });
 
 // ── Seasons (review-cycle archives) ─────────────────────────────────────────
@@ -22,6 +29,22 @@ export const seasons = pgTable("seasons", {
   name: text("name").notNull(),                      // user-provided label, e.g. "2025 Annual Review"
   reviewContent: text("review_content"),             // snapshot of the self-review draft at wrap-up
   archivedAt: timestamp("archived_at").defaultNow(),
+});
+
+// ── Goals (user objectives tied to review cycles) ─────────────────────────────
+export const goals = pgTable("goals", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),                    // e.g. "Get promoted to Staff Engineer"
+  createdAt: timestamp("created_at").defaultNow(),
+  archivedAt: timestamp("archived_at"),              // null = active, set = archived
+  seasonId: integer("season_id"),                    // null = current season, set = archived from previous season
+});
+
+// ── Achievement-Goal mapping (many-to-many) ───────────────────────────────────
+export const achievementGoals = pgTable("achievement_goals", {
+  achievementId: integer("achievement_id").notNull().references(() => achievements.id),
+  goalId: integer("goal_id").notNull().references(() => goals.id),
 });
 
 export const badges = pgTable("badges", {
@@ -71,6 +94,10 @@ export const insertAchievementSchema = createInsertSchema(achievements).pick({
   isConfirmed: true,
 }).partial({ feedbackType: true, source: true, fromPerson: true, isConfirmed: true });
 export const insertBadgeSchema = createInsertSchema(badges);
+export const insertGoalSchema = createInsertSchema(goals).pick({
+  title: true,
+}).strict();
+export const insertAchievementGoalSchema = createInsertSchema(achievementGoals).strict();
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -80,3 +107,6 @@ export type Badge = typeof badges.$inferSelect;
 export type InsertBadge = z.infer<typeof insertBadgeSchema>;
 export type Season = typeof seasons.$inferSelect;
 export type InsertSeason = z.infer<typeof insertSeasonSchema>;
+export type Goal = typeof goals.$inferSelect;
+export type InsertGoal = z.infer<typeof insertGoalSchema>;
+export type AchievementGoal = typeof achievementGoals.$inferSelect;

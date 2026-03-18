@@ -1,6 +1,6 @@
-import { users, achievements, badges, seasons, type User, type InsertUser, type Achievement, type InsertAchievement, type Badge, type InsertBadge, type Season } from "@shared/schema";
+import { users, achievements, badges, seasons, goals, achievementGoals, type User, type InsertUser, type Achievement, type InsertAchievement, type Badge, type InsertBadge, type Season, type Goal, type InsertGoal } from "@shared/schema";
 import { db } from "./db";
-import { eq, sql, desc, isNull, isNotNull } from "drizzle-orm";
+import { eq, sql, desc, isNull, isNotNull, gte } from "drizzle-orm";
 import { encryptText, decryptText } from "./encryption";
 
 export interface IStorage {
@@ -34,6 +34,15 @@ export interface IStorage {
   getSeason(id: number): Promise<Season | undefined>;
   archiveCurrentWins(userId: number, seasonId: number): Promise<void>;
   getSeasonAchievements(seasonId: number): Promise<Achievement[]>;
+  // Profile
+  getProfile(userId: number): Promise<Partial<User> | undefined>;
+  updateProfile(userId: number, profile: { role?: string; careerJourney?: string; team?: string; company?: string; profileContext?: string; profileCompletedAt?: Date }): Promise<void>;
+  // Goals
+  createGoal(userId: number, title: string): Promise<Goal>;
+  getGoals(userId: number): Promise<Goal[]>;
+  archiveGoal(goalId: number): Promise<void>;
+  tagAchievementToGoals(achievementId: number, goalIds: number[]): Promise<void>;
+  getGoalProgress(userId: number): Promise<Array<{ goal: Goal; winCount: number; lastWinDate: Date | null; needsNudge: boolean }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -251,6 +260,111 @@ export class DatabaseStorage implements IStorage {
     return Promise.all(
       rawAchievements.map(async (a) => ({ ...a, title: await decryptText(a.title) }))
     );
+  }
+
+  // ── Profile ───────────────────────────────────────────────────────────────
+  async getProfile(userId: number): Promise<Partial<User> | undefined> {
+    const [user] = await db
+      .select({
+        role: users.role,
+        careerJourney: users.careerJourney,
+        team: users.team,
+        company: users.company,
+        profileContext: users.profileContext,
+        profileCompletedAt: users.profileCompletedAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+    return user;
+  }
+
+  async updateProfile(userId: number, profile: { role?: string; careerJourney?: string; team?: string; company?: string; profileContext?: string; profileCompletedAt?: Date }): Promise<void> {
+    const updateData: any = {};
+    if (profile.role !== undefined) updateData.role = profile.role || null;
+    if (profile.careerJourney !== undefined) updateData.careerJourney = profile.careerJourney || null;
+    if (profile.team !== undefined) updateData.team = profile.team || null;
+    if (profile.company !== undefined) updateData.company = profile.company || null;
+    if (profile.profileContext !== undefined) updateData.profileContext = profile.profileContext || null;
+    if (profile.profileCompletedAt !== undefined) updateData.profileCompletedAt = profile.profileCompletedAt;
+
+    await db.update(users).set(updateData).where(eq(users.id, userId));
+  }
+
+  // ── Goals ──────────────────────────────────────────────────────────────────
+  async createGoal(userId: number, title: string): Promise<Goal> {
+    const [goal] = await db.insert(goals).values({ userId, title }).returning();
+    return goal;
+  }
+
+  async getGoals(userId: number): Promise<Goal[]> {
+    return db
+      .select()
+      .from(goals)
+      .where(sql`${goals.userId} = ${userId} AND ${goals.seasonId} IS NULL AND ${goals.archivedAt} IS NULL`)
+      .orderBy(desc(goals.createdAt));
+  }
+
+  async archiveGoal(goalId: number): Promise<void> {
+    await db.update(goals).set({ archivedAt: new Date() }).where(eq(goals.id, goalId));
+  }
+
+  async tagAchievementToGoals(achievementId: number, goalIds: number[]): Promise<void> {
+    // Clear existing tags
+    await db.delete(achievementGoals).where(eq(achievementGoals.achievementId, achievementId));
+
+    // Insert new tags
+    if (goalIds.length > 0) {
+      await db.insert(achievementGoals).values(
+        goalIds.map(goalId => ({ achievementId, goalId }))
+      );
+    }
+  }
+
+  async getGoalProgress(userId: number): Promise<Array<{ goal: Goal; winCount: number; lastWinDate: Date | null; needsNudge: boolean }>> {
+    const userGoals = await this.getGoals(userId);
+
+    const progress = await Promise.all(
+      userGoals.map(async (goal) => {
+        // Get wins tagged to this goal
+        const taggedWins = await db
+          .select({ achievementId: achievementGoals.achievementId })
+          .from(achievementGoals)
+          .where(eq(achievementGoals.goalId, goal.id));
+
+        const winIds = taggedWins.map(w => w.achievementId);
+
+        let winCount = 0;
+        let lastWinDate: Date | null = null;
+
+        if (winIds.length > 0) {
+          const goalAchievements = await db
+            .select({ achievementDate: achievements.achievementDate })
+            .from(achievements)
+            .where(sql`${achievements.id} IN (${sql.join(winIds)})`)
+            .orderBy(desc(achievements.achievementDate))
+            .limit(1);
+
+          winCount = winIds.length;
+          if (goalAchievements.length > 0) {
+            lastWinDate = goalAchievements[0].achievementDate as unknown as Date;
+          }
+        }
+
+        // Check if nudge needed (no wins in 60+ days)
+        let needsNudge = false;
+        if (lastWinDate) {
+          const daysSinceLastWin = (new Date().getTime() - lastWinDate.getTime()) / (1000 * 60 * 60 * 24);
+          needsNudge = daysSinceLastWin > 60;
+        } else if (goal.createdAt) {
+          const daysSinceCreated = (new Date().getTime() - goal.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+          needsNudge = daysSinceCreated > 60;
+        }
+
+        return { goal, winCount, lastWinDate, needsNudge };
+      })
+    );
+
+    return progress;
   }
 }
 

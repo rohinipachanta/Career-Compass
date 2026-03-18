@@ -50,6 +50,50 @@ export async function runMigrations() {
       ALTER TABLE achievements
         ADD COLUMN IF NOT EXISTS season_id INTEGER REFERENCES seasons(id);
     `);
+    // Profile fields on users
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS role TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS career_journey TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS team TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS company TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS profile_context TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS profile_completed_at TIMESTAMP;
+    `);
+    // Goals table for user objectives
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS goals (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        title TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        archived_at TIMESTAMP,
+        season_id INTEGER REFERENCES seasons(id)
+      );
+    `);
+    // Achievement-Goal mapping (many-to-many)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS achievement_goals (
+        achievement_id INTEGER NOT NULL REFERENCES achievements(id),
+        goal_id INTEGER NOT NULL REFERENCES goals(id),
+        PRIMARY KEY (achievement_id, goal_id)
+      );
+    `);
     console.log("[db] Migrations applied.");
   } catch (err: any) {
     // Log clearly but don't throw — startup continues even if migration fails.
