@@ -1717,7 +1717,7 @@ function HowItWorksModal({ open, onClose }: { open: boolean; onClose: () => void
     {
       emoji: "⚙️",
       title: "Settings — personalise your experience",
-      desc: "Fill in your Career Profile (role, team, career goal) to help the app tailor itself to you. Save your email to get weekly Monday recap emails. The more context you give, the more useful Winsync becomes.",
+      desc: "Fill in your Career Profile (role, team, career goal) to help the app tailor itself to you. Save your email and turn on reminders to get a Monday recap + Wednesday & Friday nudges at 1PM Central — so wins never slip through the cracks.",
     },
   ];
 
