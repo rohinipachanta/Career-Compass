@@ -1,4 +1,4 @@
-import { users, achievements, badges, type User, type InsertUser, type Achievement, type InsertAchievement, type Badge, type InsertBadge } from "@shared/schema";
+import { users, achievements, badges, seasons, type User, type InsertUser, type Achievement, type InsertAchievement, type Badge, type InsertBadge, type Season } from "@shared/schema";
 import { db } from "./db";
 import { eq, sql, desc, isNull, isNotNull } from "drizzle-orm";
 import { encryptText, decryptText } from "./encryption";
@@ -24,6 +24,16 @@ export interface IStorage {
   getAllUsersWithReminders(): Promise<User[]>;
   getBadges(userId: number): Promise<Badge[]>;
   awardBadge(userId: number, type: string): Promise<void>;
+  // Review draft auto-save
+  getReviewDraft(userId: number): Promise<{ content: string | null; updatedAt: Date | null }>;
+  saveReviewDraft(userId: number, content: string): Promise<void>;
+  clearReviewDraft(userId: number): Promise<void>;
+  // Seasons (review-cycle archives)
+  createSeason(userId: number, name: string, reviewContent: string | null): Promise<Season>;
+  getSeasons(userId: number): Promise<Season[]>;
+  getSeason(id: number): Promise<Season | undefined>;
+  archiveCurrentWins(userId: number, seasonId: number): Promise<void>;
+  getSeasonAchievements(seasonId: number): Promise<Achievement[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -46,7 +56,7 @@ export class DatabaseStorage implements IStorage {
     const rawAchievements = await db
       .select()
       .from(achievements)
-      .where(sql`${achievements.userId} = ${userId} AND ${achievements.dismissedAt} IS NULL`)
+      .where(sql`${achievements.userId} = ${userId} AND ${achievements.dismissedAt} IS NULL AND ${achievements.seasonId} IS NULL`)
       .orderBy(desc(achievements.achievementDate), desc(achievements.id));
     
     // Decrypt achievement titles
@@ -144,7 +154,7 @@ export class DatabaseStorage implements IStorage {
     const rawAchievements = await db
       .select()
       .from(achievements)
-      .where(sql`${achievements.userId} = ${userId} AND ${achievements.dismissedAt} IS NOT NULL`)
+      .where(sql`${achievements.userId} = ${userId} AND ${achievements.dismissedAt} IS NOT NULL AND ${achievements.seasonId} IS NULL`)
       .orderBy(desc(achievements.dismissedAt));
     return Promise.all(
       rawAchievements.map(async (a) => ({ ...a, title: await decryptText(a.title) }))
@@ -189,6 +199,58 @@ export class DatabaseStorage implements IStorage {
 
   async getAllUsersWithReminders(): Promise<User[]> {
     return db.select().from(users).where(eq(users.weeklyReminder, true));
+  }
+
+  // ── Review draft auto-save ────────────────────────────────────────────────
+  async getReviewDraft(userId: number): Promise<{ content: string | null; updatedAt: Date | null }> {
+    const [user] = await db.select({ reviewDraft: users.reviewDraft, reviewDraftUpdatedAt: users.reviewDraftUpdatedAt })
+      .from(users).where(eq(users.id, userId));
+    return { content: user?.reviewDraft ?? null, updatedAt: user?.reviewDraftUpdatedAt ?? null };
+  }
+
+  async saveReviewDraft(userId: number, content: string): Promise<void> {
+    await db.update(users)
+      .set({ reviewDraft: content, reviewDraftUpdatedAt: new Date() })
+      .where(eq(users.id, userId));
+  }
+
+  async clearReviewDraft(userId: number): Promise<void> {
+    await db.update(users)
+      .set({ reviewDraft: null, reviewDraftUpdatedAt: null })
+      .where(eq(users.id, userId));
+  }
+
+  // ── Seasons ───────────────────────────────────────────────────────────────
+  async createSeason(userId: number, name: string, reviewContent: string | null): Promise<Season> {
+    const [season] = await db.insert(seasons).values({ userId, name, reviewContent }).returning();
+    return season;
+  }
+
+  async getSeasons(userId: number): Promise<Season[]> {
+    return db.select().from(seasons).where(eq(seasons.userId, userId)).orderBy(desc(seasons.archivedAt));
+  }
+
+  async getSeason(id: number): Promise<Season | undefined> {
+    const [season] = await db.select().from(seasons).where(eq(seasons.id, id));
+    return season;
+  }
+
+  async archiveCurrentWins(userId: number, seasonId: number): Promise<void> {
+    // Move all active, non-dismissed, current-season wins into the archive
+    await db.update(achievements)
+      .set({ seasonId })
+      .where(sql`${achievements.userId} = ${userId} AND ${achievements.dismissedAt} IS NULL AND ${achievements.seasonId} IS NULL`);
+  }
+
+  async getSeasonAchievements(seasonId: number): Promise<Achievement[]> {
+    const rawAchievements = await db
+      .select()
+      .from(achievements)
+      .where(eq(achievements.seasonId, seasonId))
+      .orderBy(desc(achievements.achievementDate), desc(achievements.id));
+    return Promise.all(
+      rawAchievements.map(async (a) => ({ ...a, title: await decryptText(a.title) }))
+    );
   }
 }
 

@@ -26,6 +26,30 @@ export async function runMigrations() {
       ALTER TABLE achievements
         ADD COLUMN IF NOT EXISTS dismissed_at TIMESTAMP;
     `);
+    // Review draft auto-save
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS review_draft TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS review_draft_updated_at TIMESTAMP;
+    `);
+    // Seasons table for review-cycle archives
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS seasons (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        review_content TEXT,
+        archived_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    // Season foreign key on achievements
+    await client.query(`
+      ALTER TABLE achievements
+        ADD COLUMN IF NOT EXISTS season_id INTEGER REFERENCES seasons(id);
+    `);
     console.log("[db] Migrations applied.");
   } catch (err: any) {
     // Log clearly but don't throw — startup continues even if migration fails.

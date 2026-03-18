@@ -46,7 +46,7 @@ export async function registerRoutes(
 
   // Version check — registered FIRST so it's always available regardless of session setup
   app.get("/api/version", (_req, res) => {
-    res.json({ version: "2026-03-17-v8", status: "ok" });
+    res.json({ version: "2026-03-17-v9", status: "ok" });
   });
 
   // Setup session — try Postgres first, fall back to memory store
@@ -586,6 +586,85 @@ Rules:
       res.json({ message: "Test email sent! Check your inbox." });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to send test email" });
+    }
+  });
+
+  // ── Review draft auto-save ────────────────────────────────────────────────
+  // GET /api/review/saved-draft  — load the saved draft (returns { content, updatedAt })
+  app.get("/api/review/saved-draft", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const draft = await storage.getReviewDraft((req.user as any).id);
+      res.json(draft);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to load draft" });
+    }
+  });
+
+  // PUT /api/review/saved-draft  — save (auto-save) the current draft text
+  app.put("/api/review/saved-draft", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const { content } = req.body;
+    if (typeof content !== "string") {
+      return res.status(400).json({ message: "content must be a string" });
+    }
+    try {
+      await storage.saveReviewDraft((req.user as any).id, content);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to save draft" });
+    }
+  });
+
+  // ── Season wrap-up ─────────────────────────────────────────────────────────
+  // POST /api/seasons  — create a new season, archive current wins into it
+  app.post("/api/seasons", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    const { name } = req.body;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ message: "Season name is required" });
+    }
+    try {
+      // Fetch the user's current review draft to archive alongside wins
+      const { content: reviewContent } = await storage.getReviewDraft(userId);
+      // Create the season record
+      const season = await storage.createSeason(userId, name.trim(), reviewContent);
+      // Move all active wins into the season
+      await storage.archiveCurrentWins(userId, season.id);
+      // Clear the review draft so they start fresh
+      await storage.clearReviewDraft(userId);
+      res.status(201).json(season);
+    } catch (err: any) {
+      console.error("[wrap-up] Error:", err?.message ?? err);
+      res.status(500).json({ message: "Failed to wrap up season" });
+    }
+  });
+
+  // GET /api/seasons  — list all past seasons for the current user
+  app.get("/api/seasons", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const allSeasons = await storage.getSeasons((req.user as any).id);
+      res.json(allSeasons);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch seasons" });
+    }
+  });
+
+  // GET /api/seasons/:id/achievements  — wins archived in a specific season
+  app.get("/api/seasons/:id/achievements", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const userId = (req.user as any).id;
+    const seasonId = parseInt(req.params.id);
+    try {
+      const season = await storage.getSeason(seasonId);
+      if (!season) return res.status(404).json({ message: "Season not found" });
+      if (season.userId !== userId) return res.sendStatus(403);
+      const wins = await storage.getSeasonAchievements(seasonId);
+      res.json(wins);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch season achievements" });
     }
   });
 

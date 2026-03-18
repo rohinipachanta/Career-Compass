@@ -26,7 +26,7 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
-      <div className="fixed bottom-2 right-2 text-xs text-muted-foreground opacity-40 select-none">v8</div>
+      <div className="fixed bottom-2 right-2 text-xs text-muted-foreground opacity-40 select-none">v9</div>
       <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
         <div className="hidden md:flex flex-col justify-center space-y-6">
           <div className="flex items-center gap-3">
@@ -193,20 +193,21 @@ function ResetPasswordDialog() {
   );
 }
 
-function AuthForm({ 
-  mode, 
-  onSubmit, 
-  isPending 
-}: { 
-  mode: "login" | "register", 
-  onSubmit: (data: InsertUser) => void, 
-  isPending: boolean 
+function AuthForm({
+  mode,
+  onSubmit,
+  isPending
+}: {
+  mode: "login" | "register",
+  onSubmit: (data: InsertUser) => void,
+  isPending: boolean
 }) {
   const form = useForm<InsertUser>({
     resolver: zodResolver(insertUserSchema),
     defaultValues: {
       username: "",
       password: "",
+      email: "",
     },
   });
 
@@ -226,6 +227,30 @@ function AuthForm({
             </FormItem>
           )}
         />
+        {mode === "register" && (
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                <FormControl>
+                  <Input
+                    type="email"
+                    placeholder="you@example.com"
+                    {...field}
+                    value={field.value ?? ""}
+                    className="bg-white/50"
+                  />
+                </FormControl>
+                <p className="text-xs text-muted-foreground">
+                  Used for weekly recap emails and Gmail integration
+                </p>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         <FormField
           control={form.control}
           name="password"
@@ -244,9 +269,9 @@ function AuthForm({
             </FormItem>
           )}
         />
-        <Button 
-          type="submit" 
-          className="w-full mt-2 font-semibold text-md h-11" 
+        <Button
+          type="submit"
+          className="w-full mt-2 font-semibold text-md h-11"
           disabled={isPending}
         >
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

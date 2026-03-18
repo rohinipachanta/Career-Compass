@@ -11,6 +11,17 @@ export const users = pgTable("users", {
   level: integer("level").default(1).notNull(),
   email: text("email"),                              // user's real email for matching inbound forwards
   weeklyReminder: boolean("weekly_reminder").default(false).notNull(), // opt-in weekly recap email
+  reviewDraft: text("review_draft"),                 // auto-saved self-review draft text
+  reviewDraftUpdatedAt: timestamp("review_draft_updated_at"), // when draft was last saved
+});
+
+// ── Seasons (review-cycle archives) ─────────────────────────────────────────
+export const seasons = pgTable("seasons", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),                      // user-provided label, e.g. "2025 Annual Review"
+  reviewContent: text("review_content"),             // snapshot of the self-review draft at wrap-up
+  archivedAt: timestamp("archived_at").defaultNow(),
 });
 
 export const badges = pgTable("badges", {
@@ -34,12 +45,23 @@ export const achievements = pgTable("achievements", {
   fromPerson: text("from_person"),                              // who gave the feedback
   isConfirmed: integer("is_confirmed").default(1).notNull(),    // 1 = confirmed, 0 = pending digest
   dismissedAt: timestamp("dismissed_at"),                       // null = active, set = soft-deleted
+  seasonId: integer("season_id"),                               // null = current season, set = archived
 });
 
 export const insertUserSchema = createInsertSchema(users, {
   // Enforce minimum password length on both client and server
   password: z.string().min(6, "Password must be at least 6 characters"),
-});
+  // Email is optional on register; if provided must be valid
+  email: z.preprocess(
+    val => (val === "" || val == null ? undefined : val),
+    z.string().email("Please enter a valid email address").optional()
+  ),
+}).pick({ username: true, password: true, email: true });
+
+export const insertSeasonSchema = createInsertSchema(seasons).pick({
+  name: true,
+  reviewContent: true,
+}).partial({ reviewContent: true });
 export const insertAchievementSchema = createInsertSchema(achievements).pick({
   title: true,
   achievementDate: true,
@@ -56,3 +78,5 @@ export type Achievement = typeof achievements.$inferSelect;
 export type InsertAchievement = z.infer<typeof insertAchievementSchema>;
 export type Badge = typeof badges.$inferSelect;
 export type InsertBadge = z.infer<typeof insertBadgeSchema>;
+export type Season = typeof seasons.$inferSelect;
+export type InsertSeason = z.infer<typeof insertSeasonSchema>;

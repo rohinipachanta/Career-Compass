@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormMessage, FormLabel } from "@/components/ui/form";
 import {
-  LogOut, Plus, Calendar, Loader2, CheckCircle2, X, ChevronDown, ChevronUp, Sparkles, Pencil, Trash2, Check, RotateCcw, Archive, HelpCircle
+  LogOut, Plus, Calendar, Loader2, CheckCircle2, X, ChevronDown, ChevronUp, Sparkles, Pencil, Trash2, Check, RotateCcw, Archive, HelpCircle, Clock, BookOpen, PackageOpen
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
@@ -40,6 +40,10 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<Tab>("digest");
   const [showHelp, setShowHelp] = useState(false);
+  const [showWrapUp, setShowWrapUp] = useState(false);
+  const [isWrapping, setIsWrapping] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Show "How it works" automatically on very first login
   useEffect(() => {
@@ -97,8 +101,33 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* How it works modal */}
+      {/* Modals */}
       <HowItWorksModal open={showHelp} onClose={() => setShowHelp(false)} />
+      <WrapUpModal
+        open={showWrapUp}
+        onClose={() => setShowWrapUp(false)}
+        isWrapping={isWrapping}
+        onConfirm={async (name) => {
+          setIsWrapping(true);
+          try {
+            const res = await fetch("/api/seasons", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name }),
+            });
+            if (!res.ok) throw new Error((await res.json()).message || "Failed");
+            setShowWrapUp(false);
+            // Refetch wins so the board clears
+            queryClient.invalidateQueries({ queryKey: ["/api/achievements"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/achievements/dismissed"] });
+            toast({ title: "Season archived! 🎉", description: `"${name}" saved to Past Reviews. Starting fresh!` });
+          } catch (err: any) {
+            toast({ variant: "destructive", title: "Error", description: err.message });
+          } finally {
+            setIsWrapping(false);
+          }
+        }}
+      />
 
       {/* Page content */}
       <main className="flex-1 overflow-y-auto px-4 pb-28">
@@ -132,6 +161,7 @@ export default function Dashboard() {
               dismissedItems={dismissedAchievements}
               onRestore={(id) => restoreAchievement.mutate(id)}
               isRestorePending={restoreAchievement.isPending}
+              onWrapUp={() => setShowWrapUp(true)}
             />
           )}
           {activeTab === "review" && (
@@ -448,6 +478,7 @@ function WinsTab({
   dismissedItems,
   onRestore,
   isRestorePending,
+  onWrapUp,
 }: {
   confirmedWins: Achievement[];
   isLoading: boolean;
@@ -461,6 +492,7 @@ function WinsTab({
   dismissedItems: Achievement[];
   onRestore: (id: number) => void;
   isRestorePending: boolean;
+  onWrapUp: () => void;
 }) {
   const [filter, setFilter]     = useState<WinFilter>("all");
   const [showForm, setShowForm] = useState(false);
@@ -589,6 +621,34 @@ function WinsTab({
         onRestore={onRestore}
         isRestorePending={isRestorePending}
       />
+
+      {/* ── Wrap up this season ── */}
+      {confirmedWins.length > 0 && (
+        <div className="mt-8 mb-4">
+          <div
+            className="rounded-2xl p-4 flex items-start gap-3"
+            style={{ background: "hsl(36,30%,93%)", border: "1px solid hsl(36,20%,85%)" }}
+          >
+            <PackageOpen className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(25,40%,45%)" }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold mb-0.5" style={{ color: "hsl(25,20%,20%)" }}>
+                Review season complete?
+              </p>
+              <p className="text-xs mb-3" style={{ color: "hsl(36,10%,50%)" }}>
+                Archive all your current wins and draft into Past Reviews and start fresh for the next cycle.
+              </p>
+              <Button
+                size="sm"
+                className="h-9 px-4 rounded-xl text-xs font-semibold"
+                style={{ background: "hsl(25,55%,42%)", color: "white" }}
+                onClick={onWrapUp}
+              >
+                📦 Wrap up this season
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -991,19 +1051,71 @@ function LogWinForm({ onSubmit, isPending }: { onSubmit: (data: InsertAchievemen
 
 // ─── Tab: Self Review ────────────────────────────────────────────────────────
 type ReviewMode = "idle" | "draft";
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
-  const [period, setPeriod]             = useState<"3m" | "6m" | "1y">("3m");
+  const [period, setPeriod]             = useState<"3m" | "6m" | "1y">(() => {
+    // Persist period selection across sessions
+    return (localStorage.getItem("winsync_review_period") as "3m" | "6m" | "1y") ?? "3m";
+  });
   const [mode, setMode]                 = useState<ReviewMode>("idle");
   const [draft, setDraft]               = useState("");
   const [draftSource, setDraftSource]   = useState<"ai" | "scratch">("ai");
   const [generating, setGenerating]     = useState(false);
   const [polishing, setPolishing]       = useState(false);
   const [copied, setCopied]             = useState(false);
+  const [saveStatus, setSaveStatus]     = useState<SaveStatus>("idle");
+  const [draftLoaded, setDraftLoaded]   = useState(false);
+  const saveTimerRef                    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toast }                       = useToast();
 
   const periodLabels = { "3m": "Last 3 months", "6m": "Last 6 months", "1y": "Last year" };
   const periodDays   = { "3m": 90, "6m": 180, "1y": 365 };
+
+  // Load saved draft on mount
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const res = await fetch("/api/review/saved-draft");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.content && data.content.trim()) {
+          setDraft(data.content);
+          setDraftSource("ai");
+          setMode("draft");
+        }
+      } catch {
+        // silently fail — draft is optional
+      } finally {
+        setDraftLoaded(true);
+      }
+    };
+    loadDraft();
+  }, []);
+
+  // Auto-save with 1.5s debounce whenever draft changes (after initial load)
+  const triggerAutoSave = useCallback((content: string) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus("saving");
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await fetch("/api/review/saved-draft", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus("idle"), 2500);
+      } catch {
+        setSaveStatus("error");
+      }
+    }, 1500);
+  }, []);
+
+  const handleDraftChange = (newValue: string) => {
+    setDraft(newValue);
+    if (draftLoaded) triggerAutoSave(newValue);
+  };
 
   const filteredWins = confirmedWins.filter(a => {
     if (!a.achievementDate) return true;
@@ -1014,6 +1126,11 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
   });
 
   const winTitles = filteredWins.map(w => w.title);
+
+  const handlePeriodChange = (p: "3m" | "6m" | "1y") => {
+    setPeriod(p);
+    localStorage.setItem("winsync_review_period", p);
+  };
 
   // Generate a fresh AI draft from wins
   const generateDraft = async () => {
@@ -1033,6 +1150,7 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
       setDraft(data.draft);
       setDraftSource("ai");
       setMode("draft");
+      triggerAutoSave(data.draft);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -1056,6 +1174,7 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Polish failed");
       setDraft(data.draft);
+      triggerAutoSave(data.draft);
       toast({ title: "✨ Polished!", description: "AI improved your draft." });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
@@ -1070,9 +1189,18 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
     setMode("draft");
   };
 
-  const clearDraft = () => {
+  const clearDraft = async () => {
     setDraft("");
     setMode("idle");
+    // Clear saved draft on server too
+    try {
+      await fetch("/api/review/saved-draft", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "" }),
+      });
+    } catch { /* ignore */ }
+    setSaveStatus("idle");
   };
 
   const copyDraft = () => {
@@ -1080,6 +1208,14 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const saveIndicator = saveStatus === "saving"
+    ? <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Saving…</span>
+    : saveStatus === "saved"
+    ? <span className="flex items-center gap-1 text-green-600"><Check className="w-3 h-3" />Saved</span>
+    : saveStatus === "error"
+    ? <span className="text-red-500">Save failed</span>
+    : null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -1095,7 +1231,7 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
         {(["3m", "6m", "1y"] as const).map(p => (
           <button
             key={p}
-            onClick={() => setPeriod(p)}
+            onClick={() => handlePeriodChange(p)}
             className="flex-1 py-2 rounded-xl text-xs font-semibold transition-colors"
             style={{
               background: period === p ? "hsl(25,55%,42%)" : "hsl(36,20%,90%)",
@@ -1163,9 +1299,12 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
               className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap"
               style={{ background: "hsl(36,25%,94%)", borderBottom: "1px solid hsl(36,20%,88%)" }}
             >
-              <span className="text-xs font-semibold" style={{ color: "hsl(25,20%,30%)" }}>
-                {draftSource === "ai" ? "✦ AI Draft" : "✏️ Your Draft"} · {periodLabels[period]}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold" style={{ color: "hsl(25,20%,30%)" }}>
+                  {draftSource === "ai" ? "✦ AI Draft" : "✏️ Your Draft"} · {periodLabels[period]}
+                </span>
+                <span className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>{saveIndicator}</span>
+              </div>
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={polishWithAI}
@@ -1209,7 +1348,7 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
             {/* Editable textarea */}
             <textarea
               value={draft}
-              onChange={e => setDraft(e.target.value)}
+              onChange={e => handleDraftChange(e.target.value)}
               placeholder={draftSource === "scratch"
                 ? "Start writing your self-review here…\n\nTip: Use 'Polish with AI' when you're ready to improve it."
                 : ""}
@@ -1225,14 +1364,15 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
 
             {/* Footer hint */}
             <div
-              className="px-4 py-2 text-xs"
+              className="px-4 py-2 text-xs flex items-center gap-1"
               style={{
                 background: "hsl(36,25%,94%)",
                 borderTop: "1px solid hsl(36,20%,88%)",
                 color: "hsl(36,10%,55%)",
               }}
             >
-              ✏️ Click anywhere to edit · Polish with AI to improve your edits · Copy to take it elsewhere
+              <Clock className="w-3 h-3" />
+              Auto-saved across devices · Polish with AI · Copy to take it elsewhere
             </div>
           </div>
         </motion.div>
@@ -1497,6 +1637,25 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
         </div>
       </section>
 
+      {/* Past Reviews */}
+      <section className="mb-6">
+        <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
+          Review History
+        </h3>
+        <a
+          href="/past-reviews"
+          className="flex items-center gap-3 rounded-2xl p-4 w-full"
+          style={{ background: "hsl(36,40%,98%)", border: "1px solid hsl(36,20%,88%)" }}
+        >
+          <BookOpen className="w-5 h-5 shrink-0" style={{ color: "hsl(25,40%,45%)" }} />
+          <div className="flex-1">
+            <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,16%)" }}>Past Reviews</p>
+            <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>Browse archived seasons and past review drafts</p>
+          </div>
+          <ChevronDown className="w-4 h-4 -rotate-90" style={{ color: "hsl(36,10%,52%)" }} />
+        </a>
+      </section>
+
       {/* Sign out */}
       <Button
         variant="outline"
@@ -1591,6 +1750,98 @@ function HowItWorksModal({ open, onClose }: { open: boolean; onClose: () => void
             onClick={onClose}
           >
             Got it, let's go ⚡
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Wrap up season modal ─────────────────────────────────────────────────────
+function WrapUpModal({
+  open,
+  onClose,
+  onConfirm,
+  isWrapping,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (name: string) => void;
+  isWrapping: boolean;
+}) {
+  const defaultName = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const [name, setName] = useState(defaultName);
+
+  // Reset name each time modal opens
+  useEffect(() => {
+    if (open) setName(defaultName);
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && !isWrapping && onClose()}>
+      <DialogContent
+        className="max-w-sm rounded-3xl p-0 overflow-hidden"
+        style={{ background: "hsl(36,33%,96%)", border: "1px solid hsl(36,20%,86%)" }}
+      >
+        <DialogHeader className="px-6 pt-6 pb-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-2xl">📦</span>
+            <DialogTitle className="text-xl font-display font-bold" style={{ color: "hsl(25,20%,16%)" }}>
+              Wrap up this season
+            </DialogTitle>
+          </div>
+          <p className="text-sm" style={{ color: "hsl(36,10%,50%)" }}>
+            Give this review season a name. All your current wins and your saved review draft will be archived together so you can look back any time. You'll start fresh after.
+          </p>
+        </DialogHeader>
+
+        <div className="px-6 pb-2 space-y-3">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-widest block mb-1.5" style={{ color: "hsl(36,10%,52%)" }}>
+              Season name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              maxLength={80}
+              placeholder="e.g. 2025 Annual Review"
+              className="w-full h-10 px-3 rounded-xl text-sm outline-none"
+              style={{
+                background: "hsl(36,30%,94%)",
+                border: "1px solid hsl(36,20%,84%)",
+                color: "hsl(25,20%,16%)",
+              }}
+            />
+          </div>
+
+          <div
+            className="rounded-xl p-3 text-xs"
+            style={{ background: "hsl(36,30%,92%)", color: "hsl(25,20%,35%)" }}
+          >
+            ⚠️ This will move all your current wins to Past Reviews and clear your draft. Nothing is deleted — you can always go to Past Reviews to read them.
+          </div>
+        </div>
+
+        <div className="px-6 pb-6 pt-3 flex gap-3">
+          <Button
+            variant="outline"
+            className="flex-1 h-11 rounded-2xl font-semibold"
+            style={{ borderColor: "hsl(36,20%,82%)", color: "hsl(25,20%,35%)" }}
+            onClick={onClose}
+            disabled={isWrapping}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="flex-1 h-11 rounded-2xl font-semibold"
+            style={{ background: "hsl(25,55%,42%)", color: "white" }}
+            onClick={() => name.trim() && onConfirm(name.trim())}
+            disabled={isWrapping || !name.trim()}
+          >
+            {isWrapping
+              ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Archiving…</>
+              : <>📦 Archive & start fresh</>}
           </Button>
         </div>
       </DialogContent>
