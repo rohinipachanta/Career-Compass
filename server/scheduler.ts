@@ -2,21 +2,36 @@ import cron from "node-cron";
 import { db } from "./db";
 import { users, achievements } from "@shared/schema";
 import { eq, sql, and, gte } from "drizzle-orm";
-import { sendWeeklyReminderEmail } from "./email";
+import { sendWeeklyReminderEmail, sendMidweekNudgeEmail } from "./email";
 
 /**
- * Schedules the weekly reminder email.
- * Runs every Monday at 8:00 AM UTC (4 AM ET / 1 AM PT).
- * Cron format: minute hour day-of-month month day-of-week
+ * All cron jobs run in America/Chicago (Central Time) so 1PM always means
+ * 1PM Central regardless of daylight saving time.
+ *
+ * Monday  08:00 CT — weekly recap (win count for last week)
+ * Wednesday 13:00 CT — midweek nudge
+ * Friday  13:00 CT — end-of-week nudge
  */
 export function startScheduler() {
-  // "0 8 * * 1" = every Monday at 08:00 UTC
+  // Monday 8AM Central — weekly recap
   cron.schedule("0 8 * * 1", async () => {
-    console.log("[scheduler] Running weekly reminder job...");
+    console.log("[scheduler] Running Monday weekly reminder job...");
     await sendWeeklyReminders();
-  });
+  }, { timezone: "America/Chicago" });
 
-  console.log("[scheduler] Weekly reminder cron registered (Mondays 08:00 UTC)");
+  // Wednesday 1PM Central — midweek nudge
+  cron.schedule("0 13 * * 3", async () => {
+    console.log("[scheduler] Running Wednesday midweek nudge job...");
+    await sendMidweekNudges("Wednesday");
+  }, { timezone: "America/Chicago" });
+
+  // Friday 1PM Central — end-of-week nudge
+  cron.schedule("0 13 * * 5", async () => {
+    console.log("[scheduler] Running Friday end-of-week nudge job...");
+    await sendMidweekNudges("Friday");
+  }, { timezone: "America/Chicago" });
+
+  console.log("[scheduler] Crons registered: Monday 8AM, Wednesday 1PM, Friday 1PM (all Central Time)");
 }
 
 export async function sendWeeklyReminders() {
@@ -77,5 +92,43 @@ export async function sendWeeklyReminders() {
     console.log(`[scheduler] Weekly reminders done. Sent: ${sent}, Errors: ${errors}`);
   } catch (err) {
     console.error("[scheduler] Fatal error in sendWeeklyReminders:", err);
+  }
+}
+
+export async function sendMidweekNudges(day: "Wednesday" | "Friday") {
+  try {
+    // Send to all users with an email and weekly reminders enabled
+    const usersToNotify = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          sql`${users.email} IS NOT NULL`,
+          sql`${users.email} != ''`,
+          eq(users.weeklyReminder, true)
+        )
+      );
+
+    if (usersToNotify.length === 0) {
+      console.log(`[scheduler] No users for ${day} nudge.`);
+      return;
+    }
+
+    let sent = 0;
+    let errors = 0;
+
+    for (const user of usersToNotify) {
+      try {
+        await sendMidweekNudgeEmail(user.email!, user.username, day);
+        sent++;
+      } catch (err) {
+        console.error(`[scheduler] Error sending ${day} nudge to user ${user.id}:`, err);
+        errors++;
+      }
+    }
+
+    console.log(`[scheduler] ${day} nudges done. Sent: ${sent}, Errors: ${errors}`);
+  } catch (err) {
+    console.error(`[scheduler] Fatal error in sendMidweekNudges (${day}):`, err);
   }
 }

@@ -1599,9 +1599,9 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
         >
           <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,16%)" }}>Monday morning recap</p>
+              <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,16%)" }}>Weekly reminders</p>
               <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
-                A quick email every Monday with your weekly win count
+                Monday recap + Wednesday & Friday nudges at 1PM Central
               </p>
             </div>
             <ToggleSwitch
