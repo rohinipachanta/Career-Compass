@@ -94,6 +94,17 @@ export async function runMigrations() {
         PRIMARY KEY (achievement_id, goal_id)
       );
     `);
+    // Push notification subscriptions
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
     console.log("[db] Migrations applied.");
   } catch (err: any) {
     // Log clearly but don't throw — startup continues even if migration fails.
