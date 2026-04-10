@@ -10,9 +10,13 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import pgSession from "connect-pg-simple";
-import { pool } from "./db";
+import { pool, db } from "./db";
 import { sendTestEmail } from "./email";
 import { sendWeeklyReminders } from "./scheduler";
+import { pushSubscriptions } from "../shared/schema";
+import { eq } from "drizzle-orm";
+import { notifyUser } from "./push";
+import type { PushSubscription as WebPushSub } from "./push";
 
 const scryptAsync = promisify(scrypt);
 const PostgresStore = pgSession(session);
@@ -800,6 +804,45 @@ Rules:
     }
     sendWeeklyReminders().catch(console.error);
     res.json({ message: "Weekly reminder job triggered" });
+  });
+
+  // ── Push notification routes ──────────────────────────────────────────────
+
+  app.get("/api/push/vapid-public-key", (_req, res) => {
+    const key = process.env.VAPID_PUBLIC_KEY;
+    if (!key) return res.status(503).json({ error: "Push not configured" });
+    res.json({ publicKey: key });
+  });
+
+  app.post("/api/push/subscribe", async (req: any, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
+    const { endpoint, keys } = req.body as { endpoint: string; keys: { p256dh: string; auth: string } };
+    if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: "Invalid subscription" });
+    try {
+      await db.insert(pushSubscriptions).values({ userId: req.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth }).onConflictDoNothing({ target: pushSubscriptions.endpoint });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[push] subscribe error:", err);
+      res.status(500).json({ error: "Failed to save subscription" });
+    }
+  });
+
+  app.delete("/api/push/unsubscribe", async (req: any, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
+    const { endpoint } = req.body as { endpoint: string };
+    if (!endpoint) return res.status(400).json({ error: "endpoint required" });
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+    res.json({ ok: true });
+  });
+
+  app.post("/api/push/test", async (req: any, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
+    const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, req.user.id));
+    if (!subs.length) return res.status(404).json({ error: "No subscriptions found" });
+    const subscriptions: WebPushSub[] = subs.map((s) => ({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }));
+    const expired = await notifyUser(subscriptions, { title: "🏆 WinSync", body: "Test notification — it's working!", icon: "/winsync-192.png", url: "/" });
+    if (expired.length) await Promise.all(expired.map((endpoint) => db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint))));
+    res.json({ sent: subscriptions.length - expired.length });
   });
 
   // Seed demo data

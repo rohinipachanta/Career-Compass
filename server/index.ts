@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startScheduler } from "./scheduler";
 import { runMigrations } from "./db";
+import { initPush } from "./push";
 
 const app = express();
 const httpServer = createServer(app);
@@ -94,6 +95,7 @@ app.use((req, res, next) => {
   // It is the only port that is not firewalled.
   // Start weekly reminder scheduler
   startScheduler();
+  initPush();
 
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
