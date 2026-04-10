@@ -1640,6 +1640,19 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
           Push Notifications
         </h3>
         <div className="rounded-2xl p-4" style={{ background: "hsl(36,30%,96%)" }}>
+          {!isSupported ? (
+            /* iOS / unsupported browser — show instructions */
+            <div>
+              <p className="text-sm font-semibold mb-1" style={{ color: "hsl(25,20%,30%)" }}>
+                📱 Add to Home Screen first
+              </p>
+              <p className="text-xs" style={{ color: "hsl(36,10%,52%)" }}>
+                On iPhone, push notifications only work when WinSync is installed as an app.
+                Tap the <strong>Share</strong> button in Safari, then choose <strong>Add to Home Screen</strong>.
+                Once installed, open the app from your home screen and come back here to enable notifications.
+              </p>
+            </div>
+          ) : (
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,30%)" }}>
@@ -1663,17 +1676,16 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
                   Send test
                 </button>
               )}
-              {isSupported && (
-                <button
-                  onClick={isSubscribed ? unsubscribe : subscribe}
-                  disabled={isLoading || isDenied}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSubscribed ? "bg-primary" : "bg-muted"} disabled:opacity-50`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSubscribed ? "translate-x-6" : "translate-x-1"}`} />
-                </button>
-              )}
+              <button
+                onClick={isSubscribed ? unsubscribe : subscribe}
+                disabled={isLoading || isDenied}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSubscribed ? "bg-primary" : "bg-muted"} disabled:opacity-50`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSubscribed ? "translate-x-6" : "translate-x-1"}`} />
+              </button>
             </div>
           </div>
+          )}
         </div>
       </section>
 
