@@ -837,12 +837,26 @@ Rules:
 
   app.post("/api/push/test", async (req: any, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, req.user.id));
+      console.log(`[push] test: found ${subs.length} subscription(s) for user ${req.user.id}`);
+      if (!subs.length) return res.status(404).json({ error: "No subscriptions found — try toggling notifications off and back on." });
+      const subscriptions: WebPushSub[] = subs.map((s) => ({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }));
+      const expired = await notifyUser(subscriptions, { title: "🏆 WinSync", body: "Test notification — it's working!", icon: "/winsync-192.png", url: "/" });
+      console.log(`[push] test: sent=${subscriptions.length - expired.length}, expired=${expired.length}`);
+      if (expired.length) await Promise.all(expired.map((endpoint) => db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint))));
+      res.json({ sent: subscriptions.length - expired.length });
+    } catch (err: any) {
+      console.error("[push] test error:", err?.message ?? err);
+      res.status(500).json({ error: "Push send failed: " + (err?.message ?? "unknown error") });
+    }
+  });
+
+  app.get("/api/push/debug", async (req: any, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
+    const vapidConfigured = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
     const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, req.user.id));
-    if (!subs.length) return res.status(404).json({ error: "No subscriptions found" });
-    const subscriptions: WebPushSub[] = subs.map((s) => ({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }));
-    const expired = await notifyUser(subscriptions, { title: "🏆 WinSync", body: "Test notification — it's working!", icon: "/winsync-192.png", url: "/" });
-    if (expired.length) await Promise.all(expired.map((endpoint) => db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint))));
-    res.json({ sent: subscriptions.length - expired.length });
+    res.json({ vapidConfigured, subscriptionCount: subs.length });
   });
 
   // Seed demo data

@@ -118,7 +118,17 @@ export function usePushNotifications() {
    * Send yourself a test notification (dev only).
    */
   const sendTestNotification = useCallback(async () => {
-    await fetch('/api/push/test', { method: 'POST' });
+    try {
+      const res = await fetch('/api/push/test', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert('Test failed: ' + (data.error ?? res.statusText));
+      } else if (data.sent === 0) {
+        alert('Notification expired — try disabling and re-enabling notifications.');
+      }
+    } catch (err: any) {
+      alert('Test failed: ' + err.message);
+    }
   }, []);
 
   return {
