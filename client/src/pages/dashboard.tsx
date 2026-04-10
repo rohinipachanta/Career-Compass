@@ -47,7 +47,6 @@ export default function Dashboard() {
   const [isWrapping, setIsWrapping] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isSupported, isSubscribed, isDenied, isLoading, subscribe, unsubscribe, sendTestNotification } = usePushNotifications();
 
   // Show "How it works" automatically on very first login
   useEffect(() => {
@@ -1394,6 +1393,7 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
 
 // ─── Tab: Settings ───────────────────────────────────────────────────────────
 function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
+  const { isSupported, isSubscribed, isDenied, isLoading, subscribe, unsubscribe, sendTestNotification } = usePushNotifications();
   const [wedEnabled, setWedEnabled] = useState(true);
   const [friEnabled, setFriEnabled] = useState(true);
   const [emailInput, setEmailInput] = useState<string>(user.email ?? "");
