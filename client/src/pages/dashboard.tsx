@@ -1677,10 +1677,12 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
                   onClick={async () => {
                     setPushTestSending(true);
                     setPushTestSuccess(false);
-                    await sendTestNotification();
+                    const ok = await sendTestNotification();
                     setPushTestSending(false);
-                    setPushTestSuccess(true);
-                    setTimeout(() => setPushTestSuccess(false), 3000);
+                    if (ok) {
+                      setPushTestSuccess(true);
+                      setTimeout(() => setPushTestSuccess(false), 3000);
+                    }
                   }}
                 >
                   {pushTestSending
