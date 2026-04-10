@@ -1394,6 +1394,8 @@ function ReviewTab({ confirmedWins }: { confirmedWins: Achievement[] }) {
 // ─── Tab: Settings ───────────────────────────────────────────────────────────
 function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
   const { isSupported, isSubscribed, isDenied, isLoading, subscribe, unsubscribe, sendTestNotification } = usePushNotifications();
+  const [pushTestSending, setPushTestSending] = useState(false);
+  const [pushTestSuccess, setPushTestSuccess] = useState(false);
   const [wedEnabled, setWedEnabled] = useState(true);
   const [friEnabled, setFriEnabled] = useState(true);
   const [emailInput, setEmailInput] = useState<string>(user.email ?? "");
@@ -1668,13 +1670,25 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
             </div>
             <div className="flex items-center gap-3">
               {isSubscribed && (
-                <button
-                  onClick={sendTestNotification}
-                  className="text-xs underline"
-                  style={{ color: "hsl(36,10%,52%)" }}
+                <Button
+                  className="h-7 px-3 rounded-xl text-xs font-semibold"
+                  style={{ background: "hsl(36,25%,90%)", color: "hsl(25,20%,30%)" }}
+                  disabled={pushTestSending || pushTestSuccess}
+                  onClick={async () => {
+                    setPushTestSending(true);
+                    setPushTestSuccess(false);
+                    await sendTestNotification();
+                    setPushTestSending(false);
+                    setPushTestSuccess(true);
+                    setTimeout(() => setPushTestSuccess(false), 3000);
+                  }}
                 >
-                  Send test
-                </button>
+                  {pushTestSending
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : pushTestSuccess
+                    ? "Sent ✓"
+                    : "Send test"}
+                </Button>
               )}
               <button
                 onClick={isSubscribed ? unsubscribe : subscribe}
