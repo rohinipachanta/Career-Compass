@@ -110,3 +110,34 @@ export type InsertSeason = z.infer<typeof insertSeasonSchema>;
 export type Goal = typeof goals.$inferSelect;
 export type InsertGoal = z.infer<typeof insertGoalSchema>;
 export type AchievementGoal = typeof achievementGoals.$inferSelect;
+/**
+ * STEP 4 — Add this to shared/schema.ts
+ *
+ * 1. Open shared/schema.ts on GitHub (Edit the file with the pencil icon)
+ * 2. Paste this block anywhere after your existing table definitions
+ * 3. Commit the change
+ * 4. Then run your DB migration (see note at bottom)
+ */
+
+// ── Push Notification Subscriptions ──────────────────────────────────────────
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id:        serial("id").primaryKey(),
+  userId:    integer("user_id").notNull(),
+  endpoint:  text("endpoint").notNull().unique(),
+  p256dh:    text("p256dh").notNull(),
+  auth:      text("auth").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type PushSubscription    = typeof pushSubscriptions.$inferSelect;
+export type InsertPushSubscription = typeof pushSubscriptions.$inferInsert;
+
+/**
+ * NOTE on migration:
+ * If your app uses automatic schema push (drizzle-kit push), Railway will
+ * apply this table automatically on next deploy.
+ *
+ * If you run migrations manually, run:
+ *   npx drizzle-kit push
+ * or whatever your migration command is (check your package.json scripts).
+ */
