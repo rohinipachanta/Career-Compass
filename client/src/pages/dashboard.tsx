@@ -1425,49 +1425,6 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
     }
   };
 
-<div className="flex items-center justify-between py-3 border-t border-border">
-  <div>
-    <p className="text-sm font-medium">Push Notifications</p>
-    <p className="text-xs text-muted-foreground">
-      {isDenied
-        ? "Blocked in browser — enable in browser settings"
-        : isSubscribed
-        ? "You'll get reminders and review countdowns"
-        : "Get nudges on this device even when the tab is closed"}
-    </p>
-  </div>
-
-  <div className="flex items-center gap-2">
-    {/* Test button — only visible when subscribed */}
-    {isSubscribed && (
-      <button
-        onClick={sendTestNotification}
-        className="text-xs text-muted-foreground underline"
-      >
-        Send test
-      </button>
-    )}
-
-    {/* Toggle */}
-    {!isSupported ? (
-      <span className="text-xs text-muted-foreground">Not supported</span>
-    ) : (
-      <button
-        onClick={isSubscribed ? unsubscribe : subscribe}
-        disabled={isLoading || isDenied}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-          isSubscribed ? "bg-primary" : "bg-muted"
-        } disabled:opacity-50`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-            isSubscribed ? "translate-x-6" : "translate-x-1"
-          }`}
-        />
-      </button>
-    )}
-  </div>
-</div>
   const sendTestReminder = async () => {
     setTestSending(true);
     try {
@@ -1674,6 +1631,49 @@ function SettingsTab({ user, onLogout }: { user: any; onLogout: () => void }) {
               ⚠️ Save your email address above to enable reminders.
             </p>
           )}
+        </div>
+      </section>
+
+      {/* Push Notifications */}
+      <section className="mb-6">
+        <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "hsl(36,10%,52%)" }}>
+          Push Notifications
+        </h3>
+        <div className="rounded-2xl p-4" style={{ background: "hsl(36,30%,96%)" }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "hsl(25,20%,30%)" }}>
+                {isDenied ? "Blocked in browser" : isSubscribed ? "Active on this device" : "Enable on this device"}
+              </p>
+              <p className="text-xs mt-1" style={{ color: "hsl(36,10%,52%)" }}>
+                {isDenied
+                  ? "Allow notifications in your browser settings to enable."
+                  : isSubscribed
+                  ? "You'll receive weekly reminders and review countdowns."
+                  : "Get nudges even when the tab is closed."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {isSubscribed && (
+                <button
+                  onClick={sendTestNotification}
+                  className="text-xs underline"
+                  style={{ color: "hsl(36,10%,52%)" }}
+                >
+                  Send test
+                </button>
+              )}
+              {isSupported && (
+                <button
+                  onClick={isSubscribed ? unsubscribe : subscribe}
+                  disabled={isLoading || isDenied}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSubscribed ? "bg-primary" : "bg-muted"} disabled:opacity-50`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSubscribed ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </section>
 
