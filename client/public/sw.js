@@ -21,13 +21,19 @@ self.addEventListener('push', (event) => {
   const icon  = payload.icon  || '/winsync-192.png';
   const url   = payload.url   || '/';
 
-  // Keep options minimal — iOS ignores/rejects many advanced options
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon,
-      data: { url },
-    })
+    Promise.all([
+      // Show the notification
+      self.registration.showNotification(title, {
+        body,
+        icon,
+        data: { url },
+      }),
+      // Set badge on the home screen icon
+      navigator.setAppBadge
+        ? navigator.setAppBadge(1).catch(() => {})
+        : Promise.resolve(),
+    ])
   );
 });
 
@@ -35,18 +41,20 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url ?? '/';
-
   event.waitUntil(
-    self.clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clients) => {
-        const existing = clients.find((c) => c.url.includes(self.location.origin));
-        if (existing) {
-          existing.focus();
-        } else {
-          self.clients.openWindow(targetUrl);
-        }
-      })
+    Promise.all([
+      // Clear the badge when user taps the notification
+      navigator.clearAppBadge ? navigator.clearAppBadge().catch(() => {}) : Promise.resolve(),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => {
+          const existing = clients.find((c) => c.url.includes(self.location.origin));
+          if (existing) {
+            existing.focus();
+          } else {
+            self.clients.openWindow(event.notification.data?.url ?? '/');
+          }
+        }),
+    ])
   );
 });
