@@ -1,143 +1,141 @@
-import { pgTable, text, serial, integer, timestamp, date, boolean } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+/**
+ * shared/schema.ts
+ *
+ * Firestore-backed type definitions and Zod validation schemas.
+ * All IDs are Firestore document ID strings.
+ */
+
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  coachingCount: integer("coaching_count").default(0).notNull(),
-  xp: integer("xp").default(0).notNull(),
-  level: integer("level").default(1).notNull(),
-  email: text("email"),                              // user's real email for matching inbound forwards
-  weeklyReminder: boolean("weekly_reminder").default(false).notNull(), // opt-in weekly recap email
-  reviewDraft: text("review_draft"),                 // auto-saved self-review draft text
-  reviewDraftUpdatedAt: timestamp("review_draft_updated_at"), // when draft was last saved
-  // Profile fields
-  role: text("role"),                                // e.g. "Senior Software Engineer", "Product Manager"
-  careerJourney: text("career_journey"),             // e.g. "Promotion in current role", "New job", "Learning & growth"
-  team: text("team"),                                // e.g. "Platform Engineering"
-  company: text("company"),                          // e.g. "Acme Corp"
-  profileContext: text("profile_context"),           // open text field for any other context
-  profileCompletedAt: timestamp("profile_completed_at"), // null = not completed, set = completed
-});
+// ── Core types ────────────────────────────────────────────────────────────────
 
-// ── Seasons (review-cycle archives) ─────────────────────────────────────────
-export const seasons = pgTable("seasons", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  name: text("name").notNull(),                      // user-provided label, e.g. "2025 Annual Review"
-  reviewContent: text("review_content"),             // snapshot of the self-review draft at wrap-up
-  archivedAt: timestamp("archived_at").defaultNow(),
-});
+export type User = {
+  id: string;
+  username: string;
+  password: string;
+  email?: string | null;
+  weeklyReminder: boolean;
+  coachingCount: number;
+  xp: number;
+  level: number;
+  reviewDraft?: string | null;
+  reviewDraftUpdatedAt?: Date | null;
+  role?: string | null;
+  careerJourney?: string | null;
+  team?: string | null;
+  company?: string | null;
+  profileContext?: string | null;
+  profileCompletedAt?: Date | null;
+};
 
-// ── Goals (user objectives tied to review cycles) ─────────────────────────────
-export const goals = pgTable("goals", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  title: text("title").notNull(),                    // e.g. "Get promoted to Staff Engineer"
-  createdAt: timestamp("created_at").defaultNow(),
-  archivedAt: timestamp("archived_at"),              // null = active, set = archived
-  seasonId: integer("season_id"),                    // null = current season, set = archived from previous season
-});
+export type Achievement = {
+  id: string;
+  userId: string;
+  title: string;
+  achievementDate: string;
+  coachingResponse?: string | null;
+  xpEarned: number;
+  createdAt: Date;
+  feedbackType: string;
+  source: string;
+  fromPerson?: string | null;
+  isConfirmed: number;
+  dismissedAt?: Date | null;
+  seasonId?: string | null;
+};
 
-// ── Achievement-Goal mapping (many-to-many) ───────────────────────────────────
-export const achievementGoals = pgTable("achievement_goals", {
-  achievementId: integer("achievement_id").notNull().references(() => achievements.id),
-  goalId: integer("goal_id").notNull().references(() => goals.id),
-});
+export type Badge = {
+  id: string;
+  userId: string;
+  type: string;
+  awardedAt: Date;
+};
 
-export const badges = pgTable("badges", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  type: text("type").notNull(), // 'first_achievement', 'five_achievements', 'coaching_pro'
-  awardedAt: timestamp("awarded_at").defaultNow(),
-});
+export type Season = {
+  id: string;
+  userId: string;
+  name: string;
+  reviewContent?: string | null;
+  archivedAt: Date;
+};
 
-export const achievements = pgTable("achievements", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  title: text("title").notNull(),
-  achievementDate: date("achievement_date").notNull(),
-  coachingResponse: text("coaching_response"),
-  xpEarned: integer("xp_earned").default(10).notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  // Winsync fields
-  feedbackType: text("feedback_type").default("win").notNull(), // 'win' | 'constructive' | 'coaching'
-  source: text("source").default("self").notNull(),             // 'gmail' | 'slack' | 'granola' | 'self'
-  fromPerson: text("from_person"),                              // who gave the feedback
-  isConfirmed: integer("is_confirmed").default(1).notNull(),    // 1 = confirmed, 0 = pending digest
-  dismissedAt: timestamp("dismissed_at"),                       // null = active, set = soft-deleted
-  seasonId: integer("season_id"),                               // null = current season, set = archived
-});
+export type Goal = {
+  id: string;
+  userId: string;
+  title: string;
+  createdAt: Date;
+  archivedAt?: Date | null;
+  seasonId?: string | null;
+};
 
-export const insertUserSchema = createInsertSchema(users, {
-  // Enforce minimum password length on both client and server
+export type AchievementGoal = {
+  id: string;
+  achievementId: string;
+  goalId: string;
+};
+
+export type PushSubscription = {
+  id: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  createdAt: Date;
+};
+
+// ── Insert types ──────────────────────────────────────────────────────────────
+
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertAchievement = z.infer<typeof insertAchievementSchema>;
+export type InsertBadge = { userId: string; type: string };
+export type InsertSeason = z.infer<typeof insertSeasonSchema>;
+export type InsertGoal = z.infer<typeof insertGoalSchema>;
+export type InsertPushSubscription = { userId: string; endpoint: string; p256dh: string; auth: string };
+
+// ── Zod validation schemas ────────────────────────────────────────────────────
+
+export const insertUserSchema = z.object({
+  username: z.string().min(1, "Username is required"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  // Email is optional on register; if provided must be valid
   email: z.preprocess(
-    val => (val === "" || val == null ? undefined : val),
+    (val) => (val === "" || val == null ? undefined : val),
     z.string().email("Please enter a valid email address").optional()
   ),
-}).pick({ username: true, password: true, email: true });
-
-export const insertSeasonSchema = createInsertSchema(seasons).pick({
-  name: true,
-  reviewContent: true,
-}).partial({ reviewContent: true });
-export const insertAchievementSchema = createInsertSchema(achievements).pick({
-  title: true,
-  achievementDate: true,
-  feedbackType: true,
-  source: true,
-  fromPerson: true,
-  isConfirmed: true,
-}).partial({ feedbackType: true, source: true, fromPerson: true, isConfirmed: true });
-export const insertBadgeSchema = createInsertSchema(badges);
-export const insertGoalSchema = createInsertSchema(goals).pick({
-  title: true,
-}).strict();
-export const insertAchievementGoalSchema = createInsertSchema(achievementGoals).strict();
-
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type Achievement = typeof achievements.$inferSelect;
-export type InsertAchievement = z.infer<typeof insertAchievementSchema>;
-export type Badge = typeof badges.$inferSelect;
-export type InsertBadge = z.infer<typeof insertBadgeSchema>;
-export type Season = typeof seasons.$inferSelect;
-export type InsertSeason = z.infer<typeof insertSeasonSchema>;
-export type Goal = typeof goals.$inferSelect;
-export type InsertGoal = z.infer<typeof insertGoalSchema>;
-export type AchievementGoal = typeof achievementGoals.$inferSelect;
-/**
- * STEP 4 — Add this to shared/schema.ts
- *
- * 1. Open shared/schema.ts on GitHub (Edit the file with the pencil icon)
- * 2. Paste this block anywhere after your existing table definitions
- * 3. Commit the change
- * 4. Then run your DB migration (see note at bottom)
- */
-
-// ── Push Notification Subscriptions ──────────────────────────────────────────
-export const pushSubscriptions = pgTable("push_subscriptions", {
-  id:        serial("id").primaryKey(),
-  userId:    integer("user_id").notNull(),
-  endpoint:  text("endpoint").notNull().unique(),
-  p256dh:    text("p256dh").notNull(),
-  auth:      text("auth").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export type PushSubscription    = typeof pushSubscriptions.$inferSelect;
-export type InsertPushSubscription = typeof pushSubscriptions.$inferInsert;
+export const insertAchievementSchema = z.object({
+  title: z.string().min(1),
+  achievementDate: z.string(),
+  feedbackType: z.string().optional(),
+  source: z.string().optional(),
+  fromPerson: z.string().optional(),
+  isConfirmed: z.number().optional(),
+});
 
-/**
- * NOTE on migration:
- * If your app uses automatic schema push (drizzle-kit push), Railway will
- * apply this table automatically on next deploy.
- *
- * If you run migrations manually, run:
- *   npx drizzle-kit push
- * or whatever your migration command is (check your package.json scripts).
- */
+export const insertSeasonSchema = z.object({
+  name: z.string(),
+  reviewContent: z.string().optional(),
+}).partial({ reviewContent: true });
+
+export const insertGoalSchema = z.object({
+  title: z.string().min(1),
+}).strict();
+
+export const insertBadgeSchema = z.object({
+  userId: z.string(),
+  type: z.string(),
+});
+
+export const insertAchievementGoalSchema = z.object({
+  achievementId: z.string(),
+  goalId: z.string(),
+});
+
+// Dummy exports kept for any import compatibility (not used with Firestore)
+export const pushSubscriptions = null as any;
+export const achievements = null as any;
+export const users = null as any;
+export const seasons = null as any;
+export const goals = null as any;
+export const achievementGoals = null as any;
+export const badges = null as any;

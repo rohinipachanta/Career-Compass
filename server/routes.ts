@@ -9,17 +9,12 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import pgSession from "connect-pg-simple";
-import { pool, db } from "./db";
 import { sendTestEmail } from "./email";
 import { sendWeeklyReminders } from "./scheduler";
-import { pushSubscriptions } from "../shared/schema";
-import { eq } from "drizzle-orm";
 import { notifyUser } from "./push";
 import type { PushSubscription as WebPushSub } from "./push";
 
 const scryptAsync = promisify(scrypt);
-const PostgresStore = pgSession(session);
 const MemSession = MemoryStore(session);
 
 async function hashPassword(password: string) {
@@ -53,15 +48,8 @@ export async function registerRoutes(
     res.json({ version: "2026-03-17-v10", status: "ok" });
   });
 
-  // Setup session — try Postgres first, fall back to memory store
-  let sessionStore;
-  try {
-    sessionStore = new PostgresStore({ pool, createTableIfMissing: true });
-    console.log("[session] Using PostgresStore");
-  } catch (err: any) {
-    console.warn("[session] PostgresStore failed, using MemoryStore:", err?.message);
-    sessionStore = new MemSession({ checkPeriod: 86400000 });
-  }
+  // Session store — in-memory (Firestore-based store can be added later)
+  const sessionStore = new MemSession({ checkPeriod: 86400000 });
 
   app.use(
     session({
@@ -254,7 +242,7 @@ export async function registerRoutes(
   app.post("/api/achievements/:id/coach", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const achievementId = parseInt(req.params.id);
+    const achievementId = req.params.id;
 
     try {
       const user = await storage.getUser(userId);
@@ -263,7 +251,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Coaching limit reached. Each user gets 10 requests for testing." });
       }
 
-      const achievement = await storage.getAchievement(achievementId);
+      const achievement = await storage.getAchievement(achievementId, userId);
       if (!achievement) return res.status(404).json({ message: "Achievement not found" });
       if (achievement.userId !== userId) return res.sendStatus(401);
 
@@ -293,7 +281,7 @@ Keep it professional, specific, and confident. Format clearly with short paragra
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const result = await model.generateContent(prompt);
       const coachingResponse = result.response.text() || "No response from AI.";
-      await storage.updateAchievement(achievementId, coachingResponse);
+      await storage.updateAchievement(achievementId, coachingResponse, userId);
       await storage.incrementCoachingCount(userId);
 
       res.json({ coachingResponse });
@@ -307,12 +295,12 @@ Keep it professional, specific, and confident. Format clearly with short paragra
   app.patch("/api/achievements/:id/confirm", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const achievementId = parseInt(req.params.id);
+    const achievementId = req.params.id;
     try {
-      const achievement = await storage.getAchievement(achievementId);
+      const achievement = await storage.getAchievement(achievementId, userId);
       if (!achievement) return res.status(404).json({ message: "Not found" });
       if (achievement.userId !== userId) return res.sendStatus(403);
-      await storage.confirmAchievement(achievementId);
+      await storage.confirmAchievement(achievementId, userId);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ message: "Failed to confirm" });
@@ -323,16 +311,16 @@ Keep it professional, specific, and confident. Format clearly with short paragra
   app.patch("/api/achievements/:id/edit", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const achievementId = parseInt(req.params.id);
+    const achievementId = req.params.id;
     const { title, feedbackType, achievementDate } = req.body;
     if (!title || !feedbackType || !achievementDate) {
       return res.status(400).json({ message: "title, feedbackType, and achievementDate are required" });
     }
     try {
-      const achievement = await storage.getAchievement(achievementId);
+      const achievement = await storage.getAchievement(achievementId, userId);
       if (!achievement) return res.status(404).json({ message: "Not found" });
       if (achievement.userId !== userId) return res.sendStatus(403);
-      await storage.editAchievement(achievementId, title, feedbackType, achievementDate);
+      await storage.editAchievement(achievementId, title, feedbackType, achievementDate, userId);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ message: "Failed to edit" });
@@ -343,12 +331,12 @@ Keep it professional, specific, and confident. Format clearly with short paragra
   app.delete("/api/achievements/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const achievementId = parseInt(req.params.id);
+    const achievementId = req.params.id;
     try {
-      const achievement = await storage.getAchievement(achievementId);
+      const achievement = await storage.getAchievement(achievementId, userId);
       if (!achievement) return res.status(404).json({ message: "Not found" });
       if (achievement.userId !== userId) return res.sendStatus(403);
-      await storage.deleteAchievement(achievementId);
+      await storage.deleteAchievement(achievementId, userId);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ message: "Failed to delete" });
@@ -370,13 +358,12 @@ Keep it professional, specific, and confident. Format clearly with short paragra
   app.post("/api/achievements/:id/restore", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const achievementId = parseInt(req.params.id);
+    const achievementId = req.params.id;
     try {
-      const achievement = await storage.getAchievement(achievementId);
-      // getAchievement doesn't filter by dismissedAt — that's fine for restore
+      const achievement = await storage.getAchievement(achievementId, userId);
       if (!achievement) return res.status(404).json({ message: "Not found" });
       if (achievement.userId !== userId) return res.sendStatus(403);
-      await storage.restoreAchievement(achievementId);
+      await storage.restoreAchievement(achievementId, userId);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ message: "Failed to restore" });
@@ -664,12 +651,12 @@ Rules:
   app.get("/api/seasons/:id/achievements", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const seasonId = parseInt(req.params.id);
+    const seasonId = req.params.id;
     try {
-      const season = await storage.getSeason(seasonId);
+      const season = await storage.getSeason(seasonId, userId);
       if (!season) return res.status(404).json({ message: "Season not found" });
       if (season.userId !== userId) return res.sendStatus(403);
-      const wins = await storage.getSeasonAchievements(seasonId);
+      const wins = await storage.getSeasonAchievements(userId, seasonId);
       res.json(wins);
     } catch (err) {
       res.status(500).json({ message: "Failed to fetch season achievements" });
@@ -738,14 +725,13 @@ Rules:
   app.delete("/api/goals/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const goalId = parseInt(req.params.id);
+    const goalId = req.params.id;
     try {
-      // Verify user owns this goal
       const goals = await storage.getGoals(userId);
       if (!goals.find(g => g.id === goalId)) {
         return res.sendStatus(403);
       }
-      await storage.archiveGoal(goalId);
+      await storage.archiveGoal(goalId, userId);
       res.json({ message: "Goal archived" });
     } catch (err) {
       res.status(500).json({ message: "Failed to archive goal" });
@@ -768,15 +754,14 @@ Rules:
   app.put("/api/achievements/:id/goals", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const userId = (req.user as any).id;
-    const achievementId = parseInt(req.params.id);
+    const achievementId = req.params.id;
     try {
       const { goalIds } = req.body;
       if (!Array.isArray(goalIds)) {
         return res.status(400).json({ message: "goalIds must be an array" });
       }
 
-      // Verify achievement belongs to user and all goals belong to user
-      const achievement = await storage.getAchievement(achievementId);
+      const achievement = await storage.getAchievement(achievementId, userId);
       if (!achievement || achievement.userId !== userId) {
         return res.sendStatus(403);
       }
@@ -789,7 +774,7 @@ Rules:
         }
       }
 
-      await storage.tagAchievementToGoals(achievementId, goalIds);
+      await storage.tagAchievementToGoals(userId, achievementId, goalIds);
       res.json({ message: "Achievement tagged to goals" });
     } catch (err) {
       res.status(500).json({ message: "Failed to tag achievement" });
@@ -819,7 +804,7 @@ Rules:
     const { endpoint, keys } = req.body as { endpoint: string; keys: { p256dh: string; auth: string } };
     if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ error: "Invalid subscription" });
     try {
-      await db.insert(pushSubscriptions).values({ userId: req.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth }).onConflictDoNothing({ target: pushSubscriptions.endpoint });
+      await storage.savePushSubscription({ userId: req.user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth });
       res.json({ ok: true });
     } catch (err) {
       console.error("[push] subscribe error:", err);
@@ -831,20 +816,20 @@ Rules:
     if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
     const { endpoint } = req.body as { endpoint: string };
     if (!endpoint) return res.status(400).json({ error: "endpoint required" });
-    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint));
+    await storage.deletePushSubscription(req.user.id, endpoint);
     res.json({ ok: true });
   });
 
   app.post("/api/push/test", async (req: any, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
     try {
-      const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, req.user.id));
+      const subs = await storage.getPushSubscriptions(req.user.id);
       console.log(`[push] test: found ${subs.length} subscription(s) for user ${req.user.id}`);
       if (!subs.length) return res.status(404).json({ error: "No subscriptions found — try toggling notifications off and back on." });
       const subscriptions: WebPushSub[] = subs.map((s) => ({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }));
       const expired = await notifyUser(subscriptions, { title: "🏆 WinSync", body: "Test notification — it's working!", icon: "/winsync-192.png", url: "/" });
       console.log(`[push] test: sent=${subscriptions.length - expired.length}, expired=${expired.length}`);
-      if (expired.length) await Promise.all(expired.map((endpoint) => db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpoint))));
+      if (expired.length) await Promise.all(expired.map((ep) => storage.deletePushSubscription(req.user.id, ep)));
       res.json({ sent: subscriptions.length - expired.length });
     } catch (err: any) {
       console.error("[push] test error:", err?.message ?? err);
@@ -855,7 +840,7 @@ Rules:
   app.get("/api/push/debug", async (req: any, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
     const vapidConfigured = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
-    const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, req.user.id));
+    const subs = await storage.getPushSubscriptions(req.user.id);
     res.json({ vapidConfigured, subscriptionCount: subs.length });
   });
 
