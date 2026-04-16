@@ -61,10 +61,25 @@ app.use(async (_req, _res, next) => {
   next();
 });
 
+// ── Secrets declared so Firebase injects them as env vars ────────────────
+
+const SECRETS = [
+  "SESSION_SECRET",
+  "GOOGLE_API_KEY",
+  "RESEND_API_KEY",
+  "RESEND_FROM",
+  "VAPID_PUBLIC_KEY",
+  "VAPID_PRIVATE_KEY",
+  "VAPID_EMAIL",
+  "ENCRYPTION_KEY",
+  "INBOUND_WEBHOOK_SECRET",
+  "APP_URL",
+] as const;
+
 // ── Firebase HTTPS Function ───────────────────────────────────────────────
 
 export const api = onRequest(
-  { region: "us-central1", timeoutSeconds: 60, memory: "512MiB" },
+  { region: "us-central1", timeoutSeconds: 60, memory: "512MiB", secrets: [...SECRETS] },
   app
 );
 
@@ -72,7 +87,7 @@ export const api = onRequest(
 
 // Monday 8AM Central — weekly recap
 export const weeklyReminder = onSchedule(
-  { schedule: "0 8 * * 1", timeZone: "America/Chicago" },
+  { schedule: "0 8 * * 1", timeZone: "America/Chicago", secrets: [...SECRETS] },
   async () => {
     console.log("[scheduler] Running Monday weekly reminder...");
     await sendWeeklyReminders();
@@ -81,7 +96,7 @@ export const weeklyReminder = onSchedule(
 
 // Wednesday 1PM Central — midweek nudge
 export const wednesdayNudge = onSchedule(
-  { schedule: "0 13 * * 3", timeZone: "America/Chicago" },
+  { schedule: "0 13 * * 3", timeZone: "America/Chicago", secrets: [...SECRETS] },
   async () => {
     console.log("[scheduler] Running Wednesday nudge...");
     await sendMidweekNudges("Wednesday");
@@ -90,7 +105,7 @@ export const wednesdayNudge = onSchedule(
 
 // Friday 1PM Central — end-of-week nudge
 export const fridayNudge = onSchedule(
-  { schedule: "0 13 * * 5", timeZone: "America/Chicago" },
+  { schedule: "0 13 * * 5", timeZone: "America/Chicago", secrets: [...SECRETS] },
   async () => {
     console.log("[scheduler] Running Friday nudge...");
     await sendMidweekNudges("Friday");
