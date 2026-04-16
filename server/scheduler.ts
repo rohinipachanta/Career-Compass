@@ -1,61 +1,37 @@
-import cron from "node-cron";
-import { db } from "./db";
-import { users, achievements } from "@shared/schema";
-import { eq, sql, and, gte } from "drizzle-orm";
-import { sendWeeklyReminderEmail, sendMidweekNudgeEmail } from "./email";
-
 /**
- * All cron jobs run in America/Chicago (Central Time) so 1PM always means
- * 1PM Central regardless of daylight saving time.
+ * server/scheduler.ts
  *
- * Monday  08:00 CT — weekly recap (win count for last week)
- * Wednesday 13:00 CT — midweek nudge
- * Friday  13:00 CT — end-of-week nudge
+ * Scheduled job logic — called by Firebase scheduled functions in firebase-entry.ts.
+ * node-cron is no longer used; scheduling is handled by Firebase onSchedule.
  */
+
+import { firestore } from "./firestore-admin";
+import { sendWeeklyReminderEmail, sendMidweekNudgeEmail } from "./email";
+import type { User } from "@shared/schema";
+
+/** No-op in Firebase — scheduling is handled by firebase-entry.ts onSchedule exports */
 export function startScheduler() {
-  // Monday 8AM Central — weekly recap
-  cron.schedule("0 8 * * 1", async () => {
-    console.log("[scheduler] Running Monday weekly reminder job...");
-    await sendWeeklyReminders();
-  }, { timezone: "America/Chicago" });
-
-  // Wednesday 1PM Central — midweek nudge
-  cron.schedule("0 13 * * 3", async () => {
-    console.log("[scheduler] Running Wednesday midweek nudge job...");
-    await sendMidweekNudges("Wednesday");
-  }, { timezone: "America/Chicago" });
-
-  // Friday 1PM Central — end-of-week nudge
-  cron.schedule("0 13 * * 5", async () => {
-    console.log("[scheduler] Running Friday end-of-week nudge job...");
-    await sendMidweekNudges("Friday");
-  }, { timezone: "America/Chicago" });
-
-  console.log("[scheduler] Crons registered: Monday 8AM, Wednesday 1PM, Friday 1PM (all Central Time)");
+  console.log("[scheduler] Running on Firebase — cron jobs managed by Firebase Functions.");
 }
 
 export async function sendWeeklyReminders() {
   try {
-    // Get all users who have an email address AND have weekly reminders enabled
-    const usersToNotify = await db
-      .select()
-      .from(users)
-      .where(
-        and(
-          sql`${users.email} IS NOT NULL`,
-          sql`${users.email} != ''`,
-          eq(users.weeklyReminder, true)
-        )
-      );
+    const snapshot = await firestore
+      .collection("users")
+      .where("weeklyReminder", "==", true)
+      .get();
+
+    const usersToNotify = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() } as User))
+      .filter(u => u.email && u.email.trim() !== "");
 
     if (usersToNotify.length === 0) {
       console.log("[scheduler] No users with weekly reminders enabled.");
       return;
     }
 
-    // Calculate the start of the current week (last Monday)
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sun, 1 = Mon ...
+    const dayOfWeek = now.getDay();
     const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - daysToLastMonday);
@@ -67,19 +43,15 @@ export async function sendWeeklyReminders() {
 
     for (const user of usersToNotify) {
       try {
-        // Count confirmed wins logged this week
-        const weekWins = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(achievements)
-          .where(
-            and(
-              eq(achievements.userId, user.id),
-              eq(achievements.isConfirmed, 1),
-              gte(achievements.achievementDate, weekStartDate)
-            )
-          );
+        const achSnap = await firestore
+          .collection("users")
+          .doc(user.id)
+          .collection("achievements")
+          .where("isConfirmed", "==", 1)
+          .where("achievementDate", ">=", weekStartDate)
+          .get();
 
-        const winCount = weekWins[0]?.count ?? 0;
+        const winCount = achSnap.size;
 
         await sendWeeklyReminderEmail(user.email!, user.username, winCount);
         sent++;
@@ -97,17 +69,14 @@ export async function sendWeeklyReminders() {
 
 export async function sendMidweekNudges(day: "Wednesday" | "Friday") {
   try {
-    // Send to all users with an email and weekly reminders enabled
-    const usersToNotify = await db
-      .select()
-      .from(users)
-      .where(
-        and(
-          sql`${users.email} IS NOT NULL`,
-          sql`${users.email} != ''`,
-          eq(users.weeklyReminder, true)
-        )
-      );
+    const snapshot = await firestore
+      .collection("users")
+      .where("weeklyReminder", "==", true)
+      .get();
+
+    const usersToNotify = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() } as User))
+      .filter(u => u.email && u.email.trim() !== "");
 
     if (usersToNotify.length === 0) {
       console.log(`[scheduler] No users for ${day} nudge.`);
