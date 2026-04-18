@@ -8,13 +8,19 @@ export class FirestoreSessionStore extends Store {
       const doc = await firestore.collection(COLLECTION).doc(sid).get();
       if (!doc.exists) return cb(null, null);
       const data = doc.data()!;
-      if (data.expiresAt && data.expiresAt.toMillis() < Date.now()) { await doc.ref.delete(); return cb(null, null); }
-      return cb(null, data.session);
+      if (data.expiresAt && data.expiresAt.toMillis() < Date.now()) {
+        await doc.ref.delete(); return cb(null, null);
+      }
+      return cb(null, JSON.parse(data.session));
     } catch (err) { cb(err); }
   }
   async set(sid: string, session: any, cb?: (err?: any) => void) {
     try {
-      await firestore.collection(COLLECTION).doc(sid).set({ session, expiresAt: new Date(Date.now() + TTL_MS), updatedAt: new Date() });
+      await firestore.collection(COLLECTION).doc(sid).set({
+        session: JSON.stringify(session),
+        expiresAt: new Date(Date.now() + TTL_MS),
+        updatedAt: new Date(),
+      });
       cb?.();
     } catch (err) { cb?.(err); }
   }
