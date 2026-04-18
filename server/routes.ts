@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import session from "express-session";
-import MemoryStore from "memorystore";
+import { FirestoreSessionStore } from "./firestore-session-store";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
@@ -15,7 +15,7 @@ import { notifyUser } from "./push";
 import type { PushSubscription as WebPushSub } from "./push";
 
 const scryptAsync = promisify(scrypt);
-const MemSession = MemoryStore(session);
+// MemoryStore removed — using Firestore-backed sessions for persistence
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
@@ -41,26 +41,30 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Trust proxy for secure cookies behind Railway's reverse proxy
-  app.set("trust proxy", 1);
+  app.set("trust proxy", true);
 
   // Version check — registered FIRST so it's always available regardless of session setup
   app.get("/api/version", (_req, res) => {
     res.json({ version: "2026-03-17-v10", status: "ok" });
   });
 
-  // Session store — in-memory (Firestore-based store can be added later)
-  const sessionStore = new MemSession({ checkPeriod: 86400000 });
+  // Session store — persisted to Firestore so sessions survive cold starts
+  const sessionStore = new FirestoreSessionStore();
 
+  // Firebase Hosting rewrites /api/** to Cloud Functions on the same domain.
+  // Cloud Run terminates TLS internally, so trust proxy is required for secure cookies.
+  // Using "auto" for secure lets express-session infer from the proxied request.
   app.use(
     session({
       store: sessionStore,
       secret: process.env.SESSION_SECRET || "winsync_secret_key",
       resave: false,
       saveUninitialized: false,
+      proxy: true,
       cookie: {
-        secure: process.env.NODE_ENV === "production",
+        secure: "auto",
         httpOnly: true,
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        sameSite: "lax",
         maxAge: 30 * 24 * 60 * 60 * 1000,
       },
     })
@@ -91,7 +95,7 @@ export async function registerRoutes(
     done(null, user.id);
   });
 
-  passport.deserializeUser(async (id: number, done) => {
+  passport.deserializeUser(async (id: string, done) => {
     try {
       const user = await storage.getUser(id);
       done(null, user ?? null);
@@ -706,8 +710,9 @@ Rules:
       }
       const goal = await storage.createGoal(userId, title.trim());
       res.json(goal);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to create goal" });
+    } catch (err: any) {
+      console.error("[POST /api/goals] Error:", err?.message ?? err);
+      res.status(500).json({ message: "Failed to create goal", error: err?.message });
     }
   });
 
@@ -717,8 +722,9 @@ Rules:
     try {
       const goals = await storage.getGoals(userId);
       res.json(goals);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch goals" });
+    } catch (err: any) {
+      console.error("[GET /api/goals] Error:", err?.message ?? err);
+      res.status(500).json({ message: "Failed to fetch goals", error: err?.message });
     }
   });
 
@@ -733,8 +739,9 @@ Rules:
       }
       await storage.archiveGoal(goalId, userId);
       res.json({ message: "Goal archived" });
-    } catch (err) {
-      res.status(500).json({ message: "Failed to archive goal" });
+    } catch (err: any) {
+      console.error("[DELETE /api/goals/:id] Error:", err?.message ?? err);
+      res.status(500).json({ message: "Failed to archive goal", error: err?.message });
     }
   });
 
@@ -745,8 +752,9 @@ Rules:
     try {
       const progress = await storage.getGoalProgress(userId);
       res.json(progress);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to fetch goal progress" });
+    } catch (err: any) {
+      console.error("[GET /api/goals/progress] Error:", err?.message ?? err);
+      res.status(500).json({ message: "Failed to fetch goal progress", error: err?.message });
     }
   });
 
